@@ -1,0 +1,55 @@
+name: Compatibility report
+description: Tell me whether MoBetter works with your receiver. This is the only kind of issue this project accepts.
+title: "[Compatibility] <your receiver model>"
+labels: ["compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing. **This project is read-only: I am not accepting pull requests or feature requests.** Compatibility reports are welcome.
+        **Do not post** your receiver's IP address, MAC address, serial number, Wi-Fi name, PIN or any password. Screenshots: cover those too.
+  - type: input
+    id: model
+    attributes:
+      label: Receiver model
+      description: For example RX-A3070 or RX-V1085.
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      description: Shown on the Setup tab, Model Information.
+    validations:
+      required: true
+  - type: dropdown
+    id: loads
+    attributes:
+      label: Does the page find and talk to your receiver?
+      options:
+        - Yes, fully
+        - Partly (see below)
+        - No
+    validations:
+      required: true
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What works for you?
+      options:
+        - label: Power on and standby
+        - label: Volume and mute
+        - label: Input selection (names match my receiver)
+        - label: Sound programs
+        - label: Scenes
+        - label: Setup tabs (reading values)
+        - label: Setup tabs (changing a harmless setting)
+  - type: textarea
+    id: broken
+    attributes:
+      label: What does not work, or looks wrong?
+  - type: textarea
+    id: report
+    attributes:
+      label: Diagnostic report (when available)
+      description: A later version will include a "diagnose" command that writes a sanitized report. Until then, leave this empty.

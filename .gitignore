@@ -1,0 +1,16 @@
+# your receiver's settings and logs: never publish
+config.json
+data/
+audit.log
+*.log
+state-backup*
+backup-*.json
+# Yamaha's own files and anything fetched from a receiver
+recon/
+schema.json
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+run.*.txt
