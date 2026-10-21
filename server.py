@@ -20,7 +20,13 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(ROOT, "web")
 DATA = os.path.join(ROOT, "data")
 CFG_PATH = os.path.join(ROOT, "config.json")
-CFG = {"receiver": None, "port": 8780, "model": "", "firmware": ""}
+PORT = 8780  # fixed on purpose: the start scripts open this address, and the port is never saved in config.json
+CFG = {"receiver": None, "model": "", "firmware": ""}
+
+
+def pick_port(cli_port=None):
+    """The port is always 8780 unless --port is given for this one run. It is never read from or written to config.json."""
+    return cli_port or PORT
 RISKY = re.compile(r"<Service>\s*<Control>|<Update>|Initialize|Factory|<Restart>|<Reset>|Network_Reboot", re.I)
 HOST_OK = re.compile(r"^(localhost|\[::1\]|\d{1,3}(\.\d{1,3}){3})(:\d+)?$", re.I)
 MY_NAMES = {socket.gethostname().lower(), socket.gethostname().lower() + ".local"}
@@ -143,10 +149,10 @@ def main(argv=None):
         CFG.update(json.load(open(CFG_PATH, encoding="utf8")))
     except FileNotFoundError:
         pass
+    CFG.pop("port", None)  # older config files saved a port; ignore it so the address never drifts
+    port = pick_port(a.port)
     if a.receiver:
         CFG["receiver"] = a.receiver
-    if a.port:
-        CFG["port"] = a.port
     if not CFG["receiver"]:
         sys.exit("Tell MoBetter your receiver's address the first time:   python server.py --receiver 192.168.0.50")
     try:
@@ -164,9 +170,13 @@ def main(argv=None):
         except Exception as e:
             print(f"  Could not build the settings list ({e}). The Home page will work; the Setup tab will be empty.")
     host = "0.0.0.0" if a.lan else "127.0.0.1"
-    srv = ThreadingHTTPServer((host, int(CFG["port"])), Handler)
+    try:
+        srv = ThreadingHTTPServer((host, port), Handler)
+    except OSError:
+        sys.exit(f"Port {port} is already in use. MoBetter may already be running: open http://localhost:{port}\n"
+                 f"(or close the other MoBetter window and start again).")
     where = "localhost" if host == "127.0.0.1" else "this-PC's-address"
-    print(f"MoBetter is running: http://{where}:{CFG['port']}   (Ctrl+C to stop)")
+    print(f"MoBetter is running: http://{where}:{port}   (Ctrl+C to stop)")
     srv.serve_forever()
 
 

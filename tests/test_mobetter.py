@@ -101,5 +101,14 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/xml", {**h, "X-Confirm": "yes"}, body), 200)
 
 
+class PortTests(unittest.TestCase):
+    def test_port_is_fixed_and_never_taken_from_config(self):
+        self.assertEqual(server.PORT, 8780)
+        self.assertEqual(server.pick_port(), 8780)
+        self.assertEqual(server.pick_port(None), 8780)
+        self.assertEqual(server.pick_port(9000), 9000)      # --port applies to that run only
+        self.assertNotIn("port", server.CFG)                # so it can never be saved into config.json
+
+
 if __name__ == "__main__":
     unittest.main()
