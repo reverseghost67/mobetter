@@ -163,7 +163,7 @@ function buildSetup(cfg) {
   const ceil = pref.querySelector("#ceil"); ceil.value = (ceilTenths / 10).toFixed(1);
   ceil.onchange = () => { const v = Math.max(-80, Math.min(16.5, +ceil.value || 0)); ceilTenths = Math.round(v * 10); try { localStorage.setItem("ceil", ceilTenths); } catch (e) {} toast("Maximum volume " + v.toFixed(1) + " dB"); refresh(); };
   const zrow = document.createElement("label"); zrow.className = "field"; zrow.style.marginTop = "12px";
-  zrow.innerHTML = `<span><input id="zones" type="checkbox"> Also show Zone 2, 3 and 4 settings (you don't use them)</span>`; pref.append(zrow);
+  zrow.innerHTML = `<span><input id="zones" type="checkbox"> Also show Zone 2, 3 and 4 settings (hidden by default)</span>`; pref.append(zrow);
   const zb = zrow.querySelector("#zones"); zb.checked = SETUP.zones;
   zb.onchange = () => { SETUP.zones = zb.checked; try { localStorage.setItem("zones", zb.checked ? "1" : "0"); } catch (e) {} const on = box.querySelector(".chip.on"); if (on) on.click(); };
   cats.forEach((c) => { const b = chip(c === "Model Information" ? "Model Information" : c, false, () => { [...box.children].forEach((x) => x.classList.remove("on")); b.classList.add("on"); openCategory(c); }); b.disabled = false; box.append(b); });

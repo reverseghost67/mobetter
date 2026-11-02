@@ -101,6 +101,30 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/xml", {**h, "X-Confirm": "yes"}, body), 200)
 
 
+class DiagnoseTests(unittest.TestCase):
+    def test_report_is_read_only_and_sanitized(self):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import diagnose
+        fake = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeReceiver)
+        threading.Thread(target=fake.serve_forever, daemon=True).start()
+        try:
+            FakeReceiver.seen.clear()
+            ip = f"127.0.0.1:{fake.server_address[1]}"
+            report, err = diagnose.build_report(ip, pause=0)
+            self.assertIsNone(err)
+            self.assertIn("Model: FAKE-1", report)
+            self.assertIn("Settings found in the Setup page: 5", report)
+            self.assertNotIn("127.0.0.1", report)
+            self.assertFalse([b for m, b in FakeReceiver.seen if m == "POST" and 'cmd="PUT"' in b])  # nothing was changed
+        finally:
+            fake.shutdown(); fake.server_close()
+
+    def test_scrub_removes_addresses_and_macs(self):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import diagnose
+        self.assertEqual(diagnose.scrub("a 10.0.0.5 b 0C:5C:52:73:AA:01 c", "x"), "a <ip> b <mac> c")
+
+
 class PortTests(unittest.TestCase):
     def test_port_is_fixed_and_never_taken_from_config(self):
         self.assertEqual(server.PORT, 8780)

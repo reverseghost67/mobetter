@@ -52,4 +52,4 @@ body:
     id: report
     attributes:
       label: Diagnostic report (when available)
-      description: A later version will include a "diagnose" command that writes a sanitized report. Until then, leave this empty.
+      description: Run `python tools/diagnose.py` (read-only) and paste the report here. Read it first; it should hold no address, serial or Wi-Fi name.
