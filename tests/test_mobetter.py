@@ -3,7 +3,10 @@ import http.server, json, os, sys, threading, unittest, urllib.error, urllib.req
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+import tempfile
 import schema_builder, server  # noqa: E402
+
+server.DATA = tempfile.mkdtemp(prefix="mobetter-test-")  # tests must never write to your real data/audit.log
 
 SAMPLE = """<div id='root' nn='root'>
  <div nn='Main_Zone'><div nn='Volume'>
