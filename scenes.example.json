@@ -1,0 +1,10 @@
+{
+  "_how_to_use": "Copy this file to scenes.json (next to server.py) and edit it for your own rack. scenes.json is yours and is never published. Each scene turns the receiver on and picks 'input' (the receiver's own input code: AV1..AV7, AUDIO1..AUDIO5, PHONO, TUNER, NET RADIO, Spotify, ...). Optional: 'pure_direct' and 'straight' (On or Off), 'waxwing_output' (0 analog, 1 digital 24/48, 2 digital 24/96; only with the Waxwing panel), and 'note' (shown after the tap: use it for anything MoBetter cannot do for you).",
+  "scenes": [
+    { "name": "TV", "input": "AV1", "pure_direct": "Off", "note": "Streaming box on AV 1." },
+    { "name": "Blu-ray", "input": "AV2", "pure_direct": "Off" },
+    { "name": "Records", "input": "PHONO", "pure_direct": "On", "note": "Turntable into the receiver's phono input." },
+    { "name": "Music · DAC", "input": "AUDIO1", "pure_direct": "Off", "straight": "On", "note": "Your DAC's analog output into AUDIO 1." },
+    { "name": "Vinyl · Waxwing", "input": "AUDIO2", "straight": "On", "waxwing_output": 2, "note": "Waxwing optical into AUDIO 2, set to digital 24/96." }
+  ]
+}

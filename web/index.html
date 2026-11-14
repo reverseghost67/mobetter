@@ -33,24 +33,66 @@
     <div class="note" id="volnote"></div>
   </section>
 
-  <section class="card">
-    <h2>Input</h2>
+  <section class="card" id="listencard">
+    <h2>Listen</h2>
+    <div class="chips" id="listen"></div>
+    <div class="note" id="listennote"></div>
+  </section>
+
+  <section class="card" id="inputcard">
+    <h2>Input <button class="chip small" id="renamebtn" title="Rename an input">Rename</button></h2>
+    <div class="note" id="renamenote"></div>
     <div class="chips" id="inputs"></div>
   </section>
 
-  <section class="card">
+  <section class="card" id="soundcard">
     <h2>Sound</h2>
     <div class="toggles" id="toggles"></div>
     <label class="field"><span>Sound program</span><select id="program"></select></label>
   </section>
 
-  <section class="card">
+  <section class="card" id="tonecard">
     <h2>Tone &amp; levels</h2>
     <div id="sliders"></div>
     <div class="chips small" id="extras"></div>
   </section>
 
-  <section class="card wide">
+  <section class="card hidden" id="gtvcard">
+    <h2>GTV <button class="chip small hidden" id="gtvpair">Pair</button></h2>
+    <div class="note" id="gtvnote"></div>
+    <div class="screenbar"><button class="chip small" id="gtvscreenbtn">Show screen</button><button class="chip small hidden" id="gtvscreenpair">Pair screen</button></div>
+    <div class="screenwrap hidden" id="gtvscreenwrap"><img id="gtvscreen" alt="What the TV shows"><div class="note" id="gtvscreennote">Streaming apps show black here; they still play on the TV.</div></div>
+    <div class="remote">
+      <div class="rrow spread"><button class="rbtn" id="gtvpower" data-key="power" title="Power">⏻</button><button class="rbtn" data-key="star" title="Bookmark">★</button></div>
+      <div class="rrow spread"><button class="rbtn" data-key="profile" title="Profile">👤</button><button class="rbtn mic" data-key="assistant" title="Assistant">🎤</button><button class="rbtn" data-key="settings" title="Settings">⚙</button></div>
+      <div class="dpad">
+        <button class="dp up" data-key="up" aria-label="Up">▲</button>
+        <button class="dp left" data-key="left" aria-label="Left">◀</button>
+        <button class="dp ok" data-key="ok" aria-label="OK"></button>
+        <button class="dp right" data-key="right" aria-label="Right">▶</button>
+        <button class="dp down" data-key="down" aria-label="Down">▼</button>
+      </div>
+      <div class="rrow spread"><button class="rbtn" data-key="back" title="Back">←</button><button class="rbtn home" data-key="home" title="Home">⌂</button><button class="rbtn" data-key="guide" title="Live TV guide">📺</button></div>
+      <button class="pill free" data-key="tv">Free TV</button>
+      <div class="rrow spread rockers">
+        <div class="rocker"><button data-rx="vup" title="Volume up (receiver)">🔊</button><button data-rx="vdn" title="Volume down (receiver)">🔉</button></div>
+        <button class="rbtn" data-rx="mute" title="Mute (receiver)">🔇</button>
+        <div class="rocker"><button data-key="ch_up" title="Channel up">▲</button><button data-key="ch_down" title="Channel down">▼</button></div>
+      </div>
+      <div class="apps">
+        <button class="appbtn yt" data-app="youtube">YouTube</button><button class="appbtn nf" data-app="netflix">NETFLIX</button>
+        <button class="appbtn dis" data-app="disney">Disney+</button><button class="appbtn pp" data-app="paramount">Paramount+</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card hidden" id="waxcard">
+    <h2>Waxwing <span class="sub" id="waxstate"></span></h2>
+    <div class="note" id="waxnote"></div>
+    <div id="waxbody"></div>
+  </section>
+
+  <section class="card wide" id="scenecard">
     <h2>Scenes</h2>
     <div class="chips grid" id="scenes"></div>
   </section>
@@ -68,5 +110,6 @@
 <div class="toast" id="toast" role="status"></div>
 <script src="setup.js"></script>
 <script src="app.js"></script>
+<script src="gtv.js"></script>
 </body>
 </html>

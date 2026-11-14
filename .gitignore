@@ -14,3 +14,8 @@ __pycache__/
 dist/
 build/
 run.*.txt
+
+# your own scenes and private notes: never publish
+scenes.json
+PRIVATE-NOTES.md
+tools/private/

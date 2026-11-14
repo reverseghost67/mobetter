@@ -22,11 +22,15 @@ DATA = os.path.join(ROOT, "data")
 CFG_PATH = os.path.join(ROOT, "config.json")
 PORT = 8780  # fixed on purpose: the start scripts open this address, and the port is never saved in config.json
 CFG = {"receiver": None, "model": "", "firmware": ""}
+GTV = None  # Google TV remote (gtv.py), only when a Google TV address is configured
+GTV_SCREEN = None  # Google TV screen view (gtv.GTVScreen), same address
+WAX = None  # Parks Audio Waxwing over Bluetooth LE (waxwing.py), only when "waxwing": true in config.json and bleak is installed
 
 
 def pick_port(cli_port=None):
     """The port is always 8780 unless --port is given for this one run. It is never read from or written to config.json."""
     return cli_port or PORT
+NAME_OK = re.compile(r"[A-Za-z0-9 .\-/&'+()]{1,15}")
 RISKY = re.compile(r"<Service>\s*<Control>|<Update>|Initialize|Factory|<Restart>|<Reset>|Network_Reboot", re.I)
 HOST_OK = re.compile(r"^(localhost|\[::1\]|\d{1,3}(\.\d{1,3}){3})(:\d+)?$", re.I)
 MY_NAMES = {socket.gethostname().lower(), socket.gethostname().lower() + ".local"}
@@ -45,8 +49,8 @@ def audit(line):
         f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')}  {line}\n")
 
 
-def receiver_call(method, path, data=None, timeout=8):
-    req = urllib.request.Request(f"http://{CFG['receiver']}{path}", data=data, method=method, headers={"Content-Type": "text/xml"} if data else {})
+def receiver_call(method, path, data=None, timeout=8, ctype="text/xml"):
+    req = urllib.request.Request(f"http://{CFG['receiver']}{path}", data=data, method=method, headers={"Content-Type": ctype} if data else {})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, r.read(), r.headers.get("Content-Type", "text/plain")
@@ -107,9 +111,37 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(st, body, ct)
         if p == "/api/config":
             return self.send(200, json.dumps({k: CFG[k] for k in ("receiver", "model", "firmware")}).encode(), "application/json")
+        if p == "/api/scenes":
+            # Your own one-tap scenes (the Listen card): scenes.json next to server.py, or the example file if you have none yet.
+            for name in ("scenes.json", "scenes.example.json"):
+                f = os.path.join(ROOT, name)
+                if os.path.exists(f):
+                    try:
+                        data = json.loads(read_bytes(f).decode("utf-8-sig"))
+                    except ValueError:
+                        return self.send(500, b"scenes file is not valid JSON")
+                    return self.send(200, json.dumps({"file": name, "scenes": data.get("scenes", [])}).encode(), "application/json")
+            return self.send(200, b'{"file": null, "scenes": []}', "application/json")
         if p == "/api/schema":
             f = os.path.join(DATA, "schema.json")
             return self.send(200, read_bytes(f), "application/json") if os.path.exists(f) else self.send(200, b"[]", "application/json")
+        if p == "/api/gtv/screen":
+            if GTV_SCREEN is None:
+                return self.send(404, b"screen view not set up")
+            png = GTV_SCREEN.screenshot()
+            if not png:
+                return self.send(503, b"no screenshot (is wireless debugging on and paired?)")
+            return self.send(200, png, "image/png")
+        if p == "/api/waxwing/status":
+            if WAX is None:
+                return self.send(200, json.dumps({"configured": False}).encode(), "application/json")
+            import waxwing
+            meta = [{"fn": f, "key": k, "label": l, "min": lo, "max": hi, "labels": lb} for f, (k, l, lo, hi, lb) in waxwing.SETTINGS.items()]
+            return self.send(200, json.dumps({"configured": True, "settings": meta, **WAX.get_status()}).encode(), "application/json")
+        if p == "/api/gtv/status":
+            if GTV is None:
+                return self.send(200, json.dumps({"configured": False}).encode(), "application/json")
+            return self.send(200, json.dumps({"configured": True, **GTV.status()}).encode(), "application/json")
         if p == "/api/audit":
             f = os.path.join(DATA, "audit.log")
             return self.send(200, (read_bytes(f).decode("utf8", "replace")[-6000:] if os.path.exists(f) else "").encode())
@@ -120,13 +152,103 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, b"not found")
         self.send(200, read_bytes(fp), TYPES.get(os.path.splitext(fp)[1], "application/octet-stream"))
 
+    def rename_input(self):
+        # Rename one input (the name the receiver shows on its display and in apps). Narrow on purpose: only an input id the receiver
+        # itself lists, only a short plain name, and every change goes into the audit log.
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            req = json.loads(self.rfile.read(min(n, 2000)).decode("utf8"))
+            iid, text = str(req.get("id", "")), str(req.get("text", "")).strip()
+        except (ValueError, AttributeError):
+            return self.send(400, b"bad request")
+        if not NAME_OK.fullmatch(text):
+            return self.send(400, b"name must be 1-15 plain letters, digits, spaces or - . / & ' + ( )")
+        st, body, _ = receiver_call("GET", "/YamahaExtendedControl/v1/system/getNameText")
+        try:
+            ids = {x.get("id") for x in json.loads(body.decode("utf8")).get("input_list", [])}
+        except (ValueError, AttributeError):
+            ids = set()
+        if iid not in ids:
+            return self.send(400, b"unknown input")
+        audit(f"{self.client_address[0]}  RENAME  {iid} -> {text}")
+        st, out, ct = receiver_call("POST", "/YamahaExtendedControl/v1/system/setNameText",
+                                    json.dumps({"id": iid, "text": text}).encode("utf8"), ctype="application/json")
+        return self.send(st, out, "application/json")
+
+    def gtv_command(self):
+        # Google TV remote: only the buttons and apps listed in gtv.py, plus the one-time pairing. Each press is audited.
+        if GTV is None:
+            return self.send(404, b"no Google TV configured (start with --gtv <address>)")
+        import gtv
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            req = json.loads(self.rfile.read(min(n, 2000)).decode("utf8") or "{}")
+        except ValueError:
+            return self.send(400, b"bad request")
+        what = self.path[len("/api/gtv/"):]
+        try:
+            if what == "key" and req.get("key") in gtv.KEYS:
+                GTV.key(req["key"])
+            elif what == "app" and req.get("app") in gtv.APPS:
+                GTV.app(req["app"])
+            elif what == "pair/start":
+                audit(f"{self.client_address[0]}  GTV pairing started")
+                GTV.start_pairing()
+            elif what == "screen/pair" and GTV_SCREEN is not None and re.fullmatch(r"\d{6}", str(req.get("code", ""))) and re.fullmatch(r"\d{2,5}", str(req.get("port", ""))):
+                ok, msg = GTV_SCREEN.pair(req["port"], req["code"])
+                audit(f"{self.client_address[0]}  GTV screen pairing: {'ok' if ok else 'failed'}")
+                if not ok:
+                    return self.send(502, ("pairing failed: " + msg).encode()[:300])
+            elif what == "screen/off" and GTV_SCREEN is not None:
+                GTV_SCREEN.disconnect()
+            elif what == "pair/finish" and re.fullmatch(r"[0-9A-Fa-f]{6}", str(req.get("code", ""))):
+                GTV.finish_pairing(req["code"])
+                audit(f"{self.client_address[0]}  GTV paired")
+            else:
+                return self.send(400, b"unknown command")
+        except Exception as e:
+            audit(f"{self.client_address[0]}  GTV {what} FAILED: {type(e).__name__}: {e}"[:300])
+            return self.send(502, f"Google TV: {type(e).__name__}: {e}".encode()[:300])
+        if what in ("key", "app"):
+            audit(f"{self.client_address[0]}  GTV {what} {req.get(what)}")
+        return self.send(200, b'{"ok":true}', "application/json")
+
+    def waxwing_set(self):
+        # Waxwing: only the settings listed in waxwing.SETTINGS, within their ranges. Each change is audited.
+        if WAX is None:
+            return self.send(404, b"no Waxwing configured")
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            req = json.loads(self.rfile.read(min(n, 500)).decode("utf8") or "{}")
+            fn, value = int(req.get("fn")), int(req.get("value"))
+        except (ValueError, TypeError):
+            return self.send(400, b"bad request")
+        try:
+            WAX.set(fn, value)
+        except Exception as e:
+            audit(f"{self.client_address[0]}  WAXWING set {fn}={value} FAILED: {type(e).__name__}: {e}"[:300])
+            return self.send(502, f"Waxwing: {e}".encode()[:300])
+        audit(f"{self.client_address[0]}  WAXWING set {fn}={value}")
+        return self.send(200, b'{"ok":true}', "application/json")
+
     def do_POST(self):
+        # Read the whole request body first (up to 20 kB), even when the request is about to be refused: answering before the
+        # body is read makes Windows abort the connection. Handlers below read it from this buffer as before.
+        import io
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        self.rfile = io.BytesIO(self.rfile.read(min(n, 20000)) if n > 0 else b"")
         if not self.allowed():
             return self.send(403, b"private network only")
-        if self.path != "/api/xml":
+        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set") and not self.path.startswith("/api/gtv/"):
             return self.send(404, b"not found")
         if self.headers.get("X-RX-UI") != "1":
             return self.send(403, b"missing page header")
+        if self.path == "/api/rename":
+            return self.rename_input()
+        if self.path == "/api/waxwing/set":
+            return self.waxwing_set()
+        if self.path.startswith("/api/gtv/"):
+            return self.gtv_command()
         n = int(self.headers.get("Content-Length", 0))
         text = self.rfile.read(min(n, 20000)).decode("utf8", "replace")
         if 'cmd="PUT"' in text.replace("'", '"'):
@@ -143,6 +265,7 @@ def main(argv=None):
     ap.add_argument("--receiver", help="IP address of your receiver (remembered in config.json)")
     ap.add_argument("--port", type=int, help="port to serve on (default 8780)")
     ap.add_argument("--lan", action="store_true", help="also serve phones and tablets on your home network")
+    ap.add_argument("--gtv", help="IP address of a Google TV / Android TV box to add a remote for (remembered in config.json)")
     ap.add_argument("--rebuild-schema", action="store_true", help="download the settings list from the receiver again")
     a = ap.parse_args(argv)
     try:
@@ -169,6 +292,29 @@ def main(argv=None):
             print(f"  {schema_builder.build_for_receiver(CFG['receiver'], schema_path)} entries saved locally")
         except Exception as e:
             print(f"  Could not build the settings list ({e}). The Home page will work; the Setup tab will be empty.")
+    if a.gtv:
+        CFG["gtv"] = a.gtv
+        json.dump(CFG, open(CFG_PATH, "w", encoding="utf8"), indent=1)
+    if CFG.get("gtv"):
+        global GTV
+        import gtv
+        GTV = gtv.GoogleTV(CFG["gtv"], DATA)
+        global GTV_SCREEN
+        if CFG.get("gtv_screen", True):
+            GTV_SCREEN = gtv.GTVScreen(CFG["gtv"])
+        print(f"Google TV remote: {CFG['gtv']}" + ("" if gtv.AVAILABLE else "  (library missing: pip install androidtvremote2)"))
+    if CFG.get("waxwing_bridge"):
+        global WAX
+        import waxwing
+        WAX = waxwing.BridgeWaxwing(CFG["waxwing_bridge"])
+        print(f"Waxwing panel: on (through the bridge at {CFG['waxwing_bridge']})")
+    elif CFG.get("waxwing"):
+        try:
+            import waxwing, bleak  # noqa: F401
+            WAX = waxwing.Waxwing(CFG.get("waxwing_address"))
+            print("Waxwing panel: on (Bluetooth LE)")
+        except ImportError:
+            print("Waxwing panel: off (library missing: pip install bleak)")
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     try:
         srv = ThreadingHTTPServer((host, port), Handler)

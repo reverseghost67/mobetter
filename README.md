@@ -11,6 +11,12 @@ A modern, dark, minimal web page for controlling a Yamaha AV receiver from your 
 
 ## What you get
 - **Home:** power, volume (with a maximum you set), mute, every input with your own names, sound programs, Straight / Enhancer / Pure Direct, bass, treble, subwoofer, scenes.
+- **Rename inputs:** tap **Rename** on the Input card, then tap an input. The receiver keeps the new name (front display, Yamaha's app, and here). Up to 14 plain characters.
+- **Google TV remote (optional):** start once with `--gtv <box address>` (remembered). A card mirroring the onn remote appears: power, arrows/OK, back, home, live TV, Free TV, channel, apps (YouTube, Netflix, Disney+, Paramount+); volume and mute go to the receiver. First time: tap **Pair**, type the 6-digit code the TV shows. Local network only (library: `pip install androidtvremote2`); the pairing key stays in `data/`.
+- **Google TV screen view (optional):** **Show screen** in the Google TV card shows what the TV is displaying (a screenshot every few seconds). It uses Android's own Wireless debugging: on the box, Settings > System > Developer options > Wireless debugging (on), then **Pair screen** and type the port and code the TV shows. Needs Android's `adb` tool (Platform Tools) on the computer running MoBetter. Streaming apps show black here; they still play on the TV. Android turns Wireless debugging off after the box restarts, so switch it on again after a restart (no new pairing needed).
+- **Listen card (your own one-tap scenes):** buttons like "TV", "Records" or "Music · DAC" that turn the receiver on, pick the input and set Pure Direct or Straight in one tap. Copy `scenes.example.json` to `scenes.json` and edit it for your rack (see the example file for the fields).
+- **Parks Audio Waxwing phono preamp (optional):** a Waxwing card with output (analog / digital 24/48 / 24/96), gain with MM and MC presets, load, mode, EQ curve, Magic, DeRumble, tone, filters, balance, volume and a cue mute, plus live levels. See [Waxwing](#parks-audio-waxwing-optional) below.
+- **Arrange the boxes:** drag any box by its title to move it. The order is remembered in that browser. Wide screens get four columns.
 - **Setup:** every group of the receiver's own settings, with the right control for each (choices, number ranges, text), live values, and a filter box.
 - **Phone friendly,** installable to your home screen.
 - **Private:** nothing leaves your home network. No accounts, no telemetry.
@@ -39,6 +45,61 @@ If the page says the receiver is not reachable, check the address and that *Netw
 - Only private-network devices are served, only the receiver's own control paths are forwarded, and every change is written to `data/audit.log`.
 - The volume maximum starts at -20 dB. Raise it in **Setup > Preferences**.
 - `python tools/backup_settings.py` saves a read-only backup of your receiver's settings to `data/` first. It is a good habit before you change settings.
+
+## Parks Audio Waxwing (optional)
+The [Waxwing](https://www.parksaudiollc.com/) is a phono preamp with a published Bluetooth LE API
+([API](https://www.parksaudiollc.com/bluetoothapi.html), [manual](https://www.parksaudiollc.com/waxwingmanual.html)). MoBetter can show a
+full Waxwing card. There are two ways to connect, set in `config.json`:
+
+1. **Bridge on a small Linux box near the Waxwing (recommended, the way the author runs it).** Copy `pi-waxbridge/` to a Raspberry Pi
+   (or any Linux machine with Bluetooth LE and Python 3.10+ with `bleak`) within Bluetooth range of the Waxwing, run
+   `pi-waxbridge/start.sh`, then add `"waxwing_bridge": "http://<pi address>:8790"` to MoBetter's `config.json`. The bridge keeps one
+   connection open while MoBetter is in use and lets go about a minute after you close the page, so the Waxwing phone app can connect
+   again. Changes land in about a second. On piCorePlayer: install Bluetooth from its Bluetooth page, turn on the Pi's built-in
+   Bluetooth, and start the bridge from Tweaks > User commands (`/home/tc/waxbridge/start.sh`), then run `pcp bu` to keep it.
+2. **Direct, from the computer running MoBetter:** `pip install bleak`, then add `"waxwing": true` to `config.json`. Fine if that computer
+   is close to the Waxwing and its Bluetooth is solid. On Windows, run MoBetter as a normal user account: the system account cannot use
+   Bluetooth LE.
+
+Things learned the hard way (thanks to Shannon Parks at Parks Audio):
+- **After subscribing to the status stream, wait before the first command:** about 1.1 s on Windows/Mac, about 2.2 s on Linux.
+  Without the pause the Waxwing hits an internal timeout and drops the link after ~5 seconds. There is no keep-alive; once the
+  stream is on, the connection stays up.
+- **Subscribe once and space commands about 500 ms apart.** Don't flood it.
+- The Waxwing takes **one Bluetooth connection at a time**: close its phone app while MoBetter is connected.
+- `tools/waxwing_probe.py` is a read-only check that finds the Waxwing and reads one status packet.
+
+## Adding your own devices
+MoBetter controls a Yamaha receiver, plus a Google TV box and a Waxwing if you have them. Your rack is different, and the page is
+built to be extended. Fork it and follow the same pattern the two add-ons use:
+
+1. **A device module next to `server.py`** (see `gtv.py` and `waxwing.py`): one small class that knows how to read the device's status
+   and send it commands. Keep the device's library optional: if it is not installed, the card simply does not appear.
+2. **A narrow API in `server.py`:** one `GET /api/<device>/status` and one `POST /api/<device>/...` for commands. **Allow-list every
+   command** (only the functions and value ranges you need), require the page's `X-RX-UI: 1` header on writes, and write each change to
+   `data/audit.log`, like the existing Google TV and Waxwing handlers.
+3. **A card in `web/index.html` plus a little code in `web/app.js`:** a `<section class="card hidden" id="...card">` that the page reveals
+   when the status call says the device is configured. Reuse the existing building blocks (`chip`, the `srow` slider rows, `toast`).
+   Every card can be dragged like the others.
+4. **A switch in `config.json`** (for example `"mydevice": "192.168.0.60"`), read in `main()` in `server.py`. Never put passwords or
+   tokens in the code; keep pairing keys in `data/`, which is never published.
+5. **Scenes:** a device that needs a setting per scene can get its own optional field in `scenes.json` (see how `waxwing_output` is
+   handled in `runScene` in `web/app.js`).
+
+How to reach different kinds of gear:
+- **Network devices with an HTTP or JSON API** (many streamers, receivers, smart plugs such as Shelly): the easiest kind. Call them
+  from the server (`urllib.request`), never straight from the browser.
+- **Android TV / Google TV boxes:** the Android TV Remote protocol (`androidtvremote2`), as `gtv.py` does.
+- **Bluetooth LE devices:** `bleak` works on Windows, macOS and Linux. If the computer running MoBetter is far from the device, or its
+  Bluetooth is unreliable, run a tiny bridge on a Raspberry Pi near it (copy `pi-waxbridge/` as a starting point). Read the maker's
+  notes on timing: many devices need a pause after connecting.
+- **Infrared-only gear** (most DACs, CD transports, older TVs): a Wi-Fi IR blaster such as a BroadLink RM4 Mini, driven locally with
+  `python-broadlink`. Learn the codes from the original remote; keep the blaster off the maker's cloud so local control keeps working.
+- **HDMI-CEC:** turn on HDMI Control on the receiver (Setup > HDMI). Sources can then wake the TV and the receiver together.
+- **Something you just switch on and off:** a smart plug or relay with a local API (for example Shelly).
+
+Keep the rules that make MoBetter safe: home network only, allow-listed commands, an audit log, nothing risky without a confirmation,
+and no secrets in the code.
 
 ## Tell me whether it works on your receiver
 This is the most useful thing you can do. Run (read-only, about a minute):

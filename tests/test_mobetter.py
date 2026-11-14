@@ -26,6 +26,8 @@ class FakeReceiver(http.server.BaseHTTPRequestHandler):
                 self.send_response(406); self.end_headers(); return
             import gzip
             self.send_response(200); self.end_headers(); self.wfile.write(gzip.compress(SAMPLE.encode())); return
+        if self.path.endswith("/system/getNameText"):
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{"response_code":0,"input_list":[{"id":"audio3","text":"Audio3"}]}'); return
         self.send_response(200); self.end_headers(); self.wfile.write(b'{"response_code":0}')
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
@@ -103,6 +105,45 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(FakeReceiver.seen, [])
         self.assertEqual(self.call("POST", "/api/xml", {**h, "X-Confirm": "yes"}, body), 200)
 
+
+    def test_rename_input_is_narrow(self):
+        h = {"Content-Type": "application/json", "X-RX-UI": "1"}
+        FakeReceiver.seen.clear()
+        self.assertEqual(self.call("POST", "/api/rename", {"Content-Type": "application/json"}, b'{"id":"audio3","text":"Clearaudio"}'), 403)  # no page header
+        self.assertEqual(self.call("POST", "/api/rename", h, b'{"id":"audio3","text":"<script>"}'), 400)   # not a plain name
+        self.assertEqual(self.call("POST", "/api/rename", h, b'{"id":"audio3","text":"' + b"x" * 16 + b'"}'), 400)  # too long
+        self.assertEqual(self.call("POST", "/api/rename", h, b'{"id":"main","text":"Clearaudio"}'), 400)  # not an input the receiver lists
+        self.assertFalse(any(m == "POST" for m, _ in FakeReceiver.seen))  # nothing was written to the receiver
+        self.assertEqual(self.call("POST", "/api/rename", h, b'{"id":"audio3","text":"Clearaudio"}'), 200)
+        self.assertIn(("POST", '{"id": "audio3", "text": "Clearaudio"}'), FakeReceiver.seen)
+
+
+    def test_gtv_is_narrow(self):
+        h = {"Content-Type": "application/json", "X-RX-UI": "1"}
+        server.GTV = None
+        self.assertEqual(self.call("POST", "/api/gtv/key", h, b'{"key":"home"}'), 404)   # not configured
+        class FakeGTV:
+            sent = []
+            def key(self, k): FakeGTV.sent.append(("key", k))
+            def app(self, a): FakeGTV.sent.append(("app", a))
+        server.GTV = FakeGTV()
+        try:
+            self.assertEqual(self.call("POST", "/api/gtv/key", {"Content-Type": "application/json"}, b'{"key":"home"}'), 403)  # no page header
+            self.assertEqual(self.call("POST", "/api/gtv/key", h, b'{"key":"FORMAT_DISK"}'), 400)  # not a remote button
+            self.assertEqual(self.call("POST", "/api/gtv/app", h, b'{"app":"https://evil.example"}'), 400)  # not a listed app
+            self.assertEqual(FakeGTV.sent, [])
+            self.assertEqual(self.call("POST", "/api/gtv/key", h, b'{"key":"home"}'), 200)
+            self.assertEqual(self.call("POST", "/api/gtv/app", h, b'{"app":"youtube"}'), 200)
+            self.assertEqual(FakeGTV.sent, [("key", "home"), ("app", "youtube")])
+        finally:
+            server.GTV = None
+
+
+    def test_gtv_object_keeps_its_methods(self):
+        # regression (12 Nov 2026): a file-path attribute named "key" hid the key() method, so every button failed
+        import gtv, tempfile
+        g = gtv.GoogleTV("192.0.2.1", tempfile.mkdtemp())
+        self.assertTrue(callable(g.key) and callable(g.app))
 
 class DiagnoseTests(unittest.TestCase):
     def test_report_is_read_only_and_sanitized(self):
