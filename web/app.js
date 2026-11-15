@@ -319,6 +319,42 @@ async function waxPoll() {
   if (st.connected) waxRender(st);
 }
 
+/* ---------- GlitterVis (the TV visualizer on this PC) ---------- */
+let glvBusy = 0;
+async function glv(cmd) {
+  glvBusy = Date.now();
+  try {
+    const r = await fetch("/api/glittervis/" + cmd, { method: "POST", headers: { "X-RX-UI": "1" } });
+    if (!r.ok) $("#glvnote").textContent = await r.text();
+  } catch (e) {}
+  setTimeout(glvPoll, cmd === "start" ? 3000 : 400);
+}
+function glvChip(label, cmd, on, title) {
+  const b = document.createElement("button"); b.className = "chip" + (on ? " on" : ""); b.textContent = label;
+  if (title) b.title = title; b.onclick = () => glv(cmd); return b;
+}
+async function glvPoll() {
+  if (document.hidden) return;
+  let st; try { st = await (await fetch("/api/glittervis/status")).json(); } catch (e) { return; }
+  if (!st.configured) return;
+  $("#glvcard").classList.remove("hidden");
+  const run = $("#glvrun"), sc = $("#glvscene"), win = $("#glvwin");
+  run.innerHTML = ""; sc.innerHTML = ""; win.innerHTML = "";
+  if (!st.running) {
+    $("#glvstate").textContent = "off";
+    $("#glvnote").textContent = Date.now() - glvBusy < 8000 ? "Starting on the TV…" : "Music visualizer for the TV.";
+    run.append(glvChip("▶ Start on the TV", "start", false));
+    return;
+  }
+  $("#glvstate").textContent = st.scene + (st.locked ? " · locked" : "");
+  $("#glvnote").textContent = st.track ? "♪ " + st.track : "";
+  run.append(glvChip("◀ Prev", "prev"), glvChip("Next ▶", "next"), glvChip("Lock", "lock", st.locked, "Stay on this scene"),
+    glvChip("Calm", "calm", st.calm, "Slower and softer"), glvChip("Title", "title", false, "Show the track title"), glvChip("■ Stop", "stop"));
+  (st.scenes || []).forEach((n) => sc.append(glvChip(n[0].toUpperCase() + n.slice(1), "scene/" + n, n === st.scene)));
+  win.append(glvChip("Full screen", "fullscreen", st.fullscreen), glvChip("Small", "size/small", !st.fullscreen && st.size === "small"),
+    glvChip("Medium", "size/medium", !st.fullscreen && st.size === "medium"), glvChip("Large", "size/large", !st.fullscreen && st.size === "large"));
+}
+
 /* ---------- drag the boxes around (order saved in this browser) ---------- */
 function layoutKey() { return "cardOrder"; }
 function applyOrder() {
@@ -355,4 +391,5 @@ function makeDraggable() {
   makeDraggable();
   refresh(); setInterval(() => { if (!dragging || Date.now() - dragging > 2500) { dragging = 0; refresh(); } }, 1500);
   waxPoll(); setInterval(waxPoll, 3000);
+  glvPoll(); setInterval(glvPoll, 3000);
 })();

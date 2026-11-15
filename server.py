@@ -24,6 +24,8 @@ PORT = 8780  # fixed on purpose: the start scripts open this address, and the po
 CFG = {"receiver": None, "model": "", "firmware": ""}
 GTV = None  # Google TV remote (gtv.py), only when a Google TV address is configured
 GTV_SCREEN = None  # Google TV screen view (gtv.GTVScreen), same address
+GLV = False  # GlitterVis visualizer on this PC (control port 127.0.0.1:8795), only when "glittervis": true in config.json
+GLV_CMD = re.compile(r"(start|stop|next|prev|lock|calm|title|fullscreen|window|size/(small|medium|large)|scene/[a-z]{1,12})")
 WAX = None  # Parks Audio Waxwing over Bluetooth LE (waxwing.py), only when "waxwing": true in config.json and bleak is installed
 
 
@@ -138,6 +140,15 @@ class Handler(BaseHTTPRequestHandler):
             import waxwing
             meta = [{"fn": f, "key": k, "label": l, "min": lo, "max": hi, "labels": lb} for f, (k, l, lo, hi, lb) in waxwing.SETTINGS.items()]
             return self.send(200, json.dumps({"configured": True, "settings": meta, **WAX.get_status()}).encode(), "application/json")
+        if p == "/api/glittervis/status":
+            if not GLV:
+                return self.send(200, b'{"configured": false}', "application/json")
+            try:
+                with urllib.request.urlopen("http://127.0.0.1:8795/status", timeout=1.5) as r:
+                    st = json.loads(r.read().decode("utf8"))
+                return self.send(200, json.dumps({"configured": True, "running": True, **st}).encode(), "application/json")
+            except Exception:
+                return self.send(200, b'{"configured": true, "running": false}', "application/json")
         if p == "/api/gtv/status":
             if GTV is None:
                 return self.send(200, json.dumps({"configured": False}).encode(), "application/json")
@@ -231,6 +242,27 @@ class Handler(BaseHTTPRequestHandler):
         audit(f"{self.client_address[0]}  WAXWING set {fn}={value}")
         return self.send(200, b'{"ok":true}', "application/json")
 
+    def glittervis_command(self):
+        # GlitterVis: only the commands in GLV_CMD. "start" runs the GlitterVis scheduled task, which opens it on the TV's
+        # desktop session (this server runs in a background session and cannot show a window itself). Each press is audited.
+        if not GLV:
+            return self.send(404, b"GlitterVis not configured")
+        what = self.path[len("/api/glittervis/"):]
+        if not GLV_CMD.fullmatch(what):
+            return self.send(400, b"unknown command")
+        audit(f"{self.client_address[0]}  GLITTERVIS {what}")
+        try:
+            if what == "start":
+                import subprocess
+                r = subprocess.run(["schtasks", "/run", "/tn", "GlitterVis"], capture_output=True, text=True, timeout=15)
+                if r.returncode != 0:
+                    return self.send(502, ("could not start: " + (r.stderr or r.stdout)).encode()[:300])
+            else:
+                urllib.request.urlopen("http://127.0.0.1:8795/cmd/" + ("quit" if what == "stop" else what), timeout=2).read()
+        except Exception as e:
+            return self.send(502, f"GlitterVis: {e}".encode()[:300])
+        return self.send(200, b'{"ok":true}', "application/json")
+
     def do_POST(self):
         # Read the whole request body first (up to 20 kB), even when the request is about to be refused: answering before the
         # body is read makes Windows abort the connection. Handlers below read it from this buffer as before.
@@ -239,7 +271,7 @@ class Handler(BaseHTTPRequestHandler):
         self.rfile = io.BytesIO(self.rfile.read(min(n, 20000)) if n > 0 else b"")
         if not self.allowed():
             return self.send(403, b"private network only")
-        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set") and not self.path.startswith("/api/gtv/"):
+        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set") and not self.path.startswith(("/api/gtv/", "/api/glittervis/")):
             return self.send(404, b"not found")
         if self.headers.get("X-RX-UI") != "1":
             return self.send(403, b"missing page header")
@@ -249,6 +281,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.waxwing_set()
         if self.path.startswith("/api/gtv/"):
             return self.gtv_command()
+        if self.path.startswith("/api/glittervis/"):
+            return self.glittervis_command()
         n = int(self.headers.get("Content-Length", 0))
         text = self.rfile.read(min(n, 20000)).decode("utf8", "replace")
         if 'cmd="PUT"' in text.replace("'", '"'):
@@ -315,6 +349,10 @@ def main(argv=None):
             print("Waxwing panel: on (Bluetooth LE)")
         except ImportError:
             print("Waxwing panel: off (library missing: pip install bleak)")
+    if CFG.get("glittervis"):
+        global GLV
+        GLV = True
+        print("GlitterVis panel: on")
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     try:
         srv = ThreadingHTTPServer((host, port), Handler)
