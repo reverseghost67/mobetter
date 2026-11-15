@@ -94,7 +94,7 @@ body.off .card:not(.vol){opacity:.55}
 
 /* Wide screens: the Input list is tall, so it spans two rows; every other box fills the gaps in the order you drag them into. */
 @media (min-width:1000px){ #inputcard{grid-row:span 2} }
-@media (min-width:1000px) and (max-width:1359px){ #gtvcard{grid-row:span 3} }  /* the tall remote spreads over 3 rows so the box under Inputs (GlitterVis) can sit right below it */
+@media (min-width:1000px){ #gtvcard{grid-row:span 3} #glvcard{grid-column:2} }  /* the tall remote spreads over 3 rows so the box under Inputs (GlitterVis) can sit right below it */
 #home{grid-auto-flow:row dense}
 /* Screens wide enough for 4 columns: the Waxwing box gets the 4th column, beside the Google TV remote (his layout, 14 Nov 2026). */
 @media (min-width:1360px){ #home{grid-template-columns:repeat(4,minmax(0,1fr))} #home .vol{grid-column:1 / -1} #waxcard{grid-column:4;grid-row:2 / span 4} }
