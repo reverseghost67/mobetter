@@ -113,3 +113,14 @@ It writes a short report (model, firmware, which features it found, how many set
 
 ## About this project
 MoBetter is a personal project, shared as-is under the [MIT license](LICENSE). It is **read-only**: pull requests and feature requests are not accepted (see [CONTRIBUTING](CONTRIBUTING.md)). You are free to fork it.
+
+## Optional: GlitterVis card
+
+If you run the GlitterVis music visualizer on the same PC, add `"glittervis": true` to `config.json` and MoBetter shows a
+GlitterVis card: start and stop, previous and next scene, jump to a scene, lock, calm, and full screen or a small, medium or large window.
+MoBetter talks to GlitterVis on `127.0.0.1:8795` (same PC only). The Start button runs a Windows scheduled task named
+**GlitterVis** that opens it on the signed-in desktop, because MoBetter itself usually runs in a background session that cannot show windows.
+Without the setting the card stays hidden.
+
+**Tip (Yamaha):** set the PC's input to *Audio Select: HDMI* rather than *Auto*. With Auto, a dropped HDMI link (a reboot, or a
+display mode change) can leave the receiver listening to that input's empty analog jack.
