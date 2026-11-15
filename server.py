@@ -26,6 +26,7 @@ GTV = None  # Google TV remote (gtv.py), only when a Google TV address is config
 GTV_SCREEN = None  # Google TV screen view (gtv.GTVScreen), same address
 GLV = False  # GlitterVis visualizer on this PC (control port 127.0.0.1:8795), only when "glittervis": true in config.json
 GLV_CMD = re.compile(r"(start|stop|next|prev|lock|calm|title|fullscreen|window|size/(small|medium|large)|scene/[a-z]{1,12})")
+HDMI_WATCH = None  # hdmi_watch.HdmiWatch, only when "hdmi_watch" is set in config.json (Windows)
 WAX = None  # Parks Audio Waxwing over Bluetooth LE (waxwing.py), only when "waxwing": true in config.json and bleak is installed
 
 
@@ -149,6 +150,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, json.dumps({"configured": True, "running": True, **st}).encode(), "application/json")
             except Exception:
                 return self.send(200, b'{"configured": true, "running": false}', "application/json")
+        if p == "/api/hdmiwatch":
+            if HDMI_WATCH is None:
+                return self.send(200, b'{"configured": false}', "application/json")
+            return self.send(200, json.dumps({"configured": True, "input": HDMI_WATCH.input, "state": HDMI_WATCH.last,
+                                              "pc_peak": round(HDMI_WATCH.peak, 3)}).encode(), "application/json")
         if p == "/api/gtv/status":
             if GTV is None:
                 return self.send(200, json.dumps({"configured": False}).encode(), "application/json")
@@ -349,6 +355,12 @@ def main(argv=None):
             print("Waxwing panel: on (Bluetooth LE)")
         except ImportError:
             print("Waxwing panel: off (library missing: pip install bleak)")
+    if CFG.get("hdmi_watch") and sys.platform == "win32":
+        global HDMI_WATCH
+        import hdmi_watch
+        HDMI_WATCH = hdmi_watch.HdmiWatch(CFG["hdmi_watch"], receiver_call, audit)
+        HDMI_WATCH.start()
+        print(f"HDMI audio watchdog: on (input {HDMI_WATCH.input})")
     if CFG.get("glittervis"):
         global GLV
         GLV = True

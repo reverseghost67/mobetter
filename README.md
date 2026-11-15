@@ -122,5 +122,12 @@ MoBetter talks to GlitterVis on `127.0.0.1:8795` (same PC only). The Start butto
 **GlitterVis** that opens it on the signed-in desktop, because MoBetter itself usually runs in a background session that cannot show windows.
 Without the setting the card stays hidden.
 
+## Optional: HDMI audio watchdog (Windows)
+
+If MoBetter runs on a PC that feeds the receiver over HDMI, add `"hdmi_watch": {"input": "av4", "bounce_input": "av1"}` (your PC's input,
+and any other input) to `config.json`. When the PC is playing sound but the receiver shows no audio signal on that input for about 8 seconds,
+MoBetter switches to the other input and back, which makes the receiver pick the HDMI audio up again. Each fix goes in `data/audit.log`;
+it backs off after 3 tries in 10 minutes. `GET /api/hdmiwatch` shows what it sees.
+
 **Tip (Yamaha):** set the PC's input to *Audio Select: HDMI* rather than *Auto*. With Auto, a dropped HDMI link (a reboot, or a
 display mode change) can leave the receiver listening to that input's empty analog jack.
