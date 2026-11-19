@@ -1,5 +1,7 @@
 # MoBetter
 
+**A local-first control panel for home audio: one page in any browser runs the receiver, TV box, phono preamp and lights. No cloud, no app.**
+
 A modern, dark, minimal web page for controlling a Yamaha AV receiver from your phone, tablet or PC. It does everything the receiver's own Web Setup page does (every setting, in the same groups) and adds a clean Home screen.
 
 > **Status: early. Built and tested on one receiver (RX-A3070).** Other Yamaha models should work, because the page builds itself from your own receiver's list of settings, but that is not proven yet. If you try it, a *Compatibility report* (Issues tab) is the most useful thing you can send.
