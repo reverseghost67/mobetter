@@ -355,6 +355,92 @@ async function glvPoll() {
     glvChip("Medium", "size/medium", !st.fullscreen && st.size === "medium"), glvChip("Large", "size/large", !st.fullscreen && st.size === "large"));
 }
 
+/* ---------- Games (GlitterMame: arcade + console menu on the TV) ---------- */
+let gameBusy = 0;
+async function games(cmd) {
+  gameBusy = Date.now();
+  try {
+    const r = await fetch("/api/games/" + cmd, { method: "POST", headers: { "X-RX-UI": "1" } });
+    if (!r.ok) $("#gamenote").textContent = await r.text();
+  } catch (e) {}
+  setTimeout(gamesPoll, cmd === "start" ? 3000 : 800);
+}
+async function gamesPoll() {
+  if (document.hidden) return;
+  let st; try { st = await (await fetch("/api/games/status")).json(); } catch (e) { return; }
+  if (!st.configured) return;
+  $("#gamecard").classList.remove("hidden");
+  const run = $("#gamerun"); run.innerHTML = "";
+  const chip = (label, cmd, title) => { const b = document.createElement("button"); b.className = "chip"; b.textContent = label;
+    if (title) b.title = title; b.onclick = () => games(cmd); return b; };
+  if (st.running) {
+    $("#gamestate").textContent = "on";
+    $("#gamenote").textContent = "Games are open on the TV. On the pad, Select + Start leaves a game.";
+    run.append(chip("■ Close games", "stop", "Ends the games menu and any game"));
+  } else {
+    $("#gamestate").textContent = "off";
+    $("#gamenote").textContent = Date.now() - gameBusy < 8000 ? "Starting on the TV…" : "Arcade and console games on the TV.";
+    run.append(chip("▶ Start on the TV", "start"));
+  }
+}
+
+/* ---------- Lights (LIFX bulbs on the home network, through the server) ----------
+   One-tap presets act on every bulb; each bulb also gets its own on/off, brightness and warmth. White light only. */
+const LIGHT_PRESETS = [
+  ["☀ Daylight", { power: true, brightness: 100, kelvin: 5000 }],
+  ["☀ Daylight 50%", { power: true, brightness: 50, kelvin: 5000 }],
+  ["Warm 50%", { power: true, brightness: 50, kelvin: 2700 }],
+  ["All off", { power: false }],
+];
+let lightBulbs = [], lightBusy = 0, lightK = [2500, 6500];
+async function lightSet(macs, change, label) {
+  if (READONLY) return toast("Preview only: nothing is sent");
+  lightBusy = Date.now();
+  try {
+    const r = await fetch("/api/lifx/set", { method: "POST", headers: { "Content-Type": "application/json", "X-RX-UI": "1" }, body: JSON.stringify({ macs, ...change }) });
+    if (!r.ok) throw new Error(await r.text());
+    if (label) toast(label);
+  } catch (e) { toast("Lights: " + e.message); }
+  lightBusy = 0; setTimeout(lightPoll, 700);
+}
+function lightRender() {
+  const pre = $("#lightpresets"), body = $("#lightbody");
+  const all = lightBulbs.filter((b) => b.online).map((b) => b.mac);
+  if (!pre.childElementCount) LIGHT_PRESETS.forEach(([t, c]) => pre.append(chip(t, false, () => lightSet(lightBulbs.filter((b) => b.online).map((b) => b.mac), c, t))));
+  if (Date.now() - lightBusy < 1500) return;
+  body.innerHTML = "";
+  lightBulbs.forEach((b) => {
+    const box = document.createElement("div"); box.style.margin = "10px 0 4px";
+    const head = document.createElement("div"); head.className = "chips small";
+    const name = document.createElement("span"); name.className = "muted"; name.style.cssText = "font-size:13px;align-self:center;min-width:70px"; name.textContent = "Light " + b.label;
+    head.append(name);
+    if (!b.online) { const n = document.createElement("span"); n.className = "muted"; n.style.fontSize = "13px"; n.textContent = "not answering"; head.append(n); body.append(head); return; }
+    head.append(chip(b.on ? "On" : "Off", b.on, () => lightSet([b.mac], { power: !b.on }, `Light ${b.label} ${b.on ? "off" : "on"}`)));
+    if (b.color) { const n = document.createElement("span"); n.className = "muted"; n.style.fontSize = "12px"; n.textContent = "(a color from the LIFX app)"; head.append(n); }
+    box.append(head);
+    [["Brightness", "brightness", 1, 100, 1, (v) => v + "%"], ["Warmth", "kelvin", lightK[0], lightK[1], 100, (v) => v + "K"]].forEach(([lab, key, mn, mx, st, fmt]) => {
+      const row = document.createElement("div"); row.className = "srow";
+      const lb = document.createElement("label"); lb.textContent = lab; const out = document.createElement("output");
+      const inp = document.createElement("input"); inp.type = "range"; inp.min = mn; inp.max = mx; inp.step = st; inp.disabled = READONLY;
+      inp.value = Math.max(mn, Math.min(mx, b[key])); out.textContent = fmt(+inp.value);
+      inp.oninput = () => { lightBusy = Date.now(); out.textContent = fmt(+inp.value); };
+      inp.onchange = () => lightSet([b.mac], { [key]: +inp.value }, `Light ${b.label}: ${fmt(+inp.value)}`);
+      row.append(lb, inp, out); box.append(row);
+    });
+    body.append(box);
+  });
+  const on = lightBulbs.filter((b) => b.online && b.on).length;
+  $("#lightstate").textContent = all.length ? `${on} of ${all.length} on` : "not answering";
+}
+async function lightPoll() {
+  if (document.hidden || Date.now() - lightBusy < 1500) return;
+  let st; try { st = await (await fetch("/api/lifx/status")).json(); } catch (e) { return; }
+  if (!st.configured) return;
+  $("#lightcard").classList.remove("hidden");
+  lightBulbs = st.bulbs || []; lightK = [st.kmin || 2500, st.kmax || 6500];
+  lightRender();
+}
+
 /* ---------- drag the boxes around (order saved in this browser) ---------- */
 function layoutKey() { return "cardOrder"; }
 function applyOrder() {
@@ -365,15 +451,36 @@ function applyOrder() {
 }
 function saveOrder() { try { localStorage.setItem(layoutKey(), JSON.stringify([...$("#home").children].map((c) => c.id).filter(Boolean))); } catch (e) {} }
 function makeDraggable() {
-  const home = $("#home"); let dragged = null;
+  // Pointer-based (works with mouse AND touch, unlike HTML drag-and-drop). Drag a box by its title, or by the small grip
+  // on boxes that have no title (the volume box); sliders and buttons inside a box are never drag handles.
+  const home = $("#home");
   [...home.querySelectorAll(":scope > section.card")].forEach((card, i) => {
     if (!card.id) card.id = "card" + i;
-    const h = card.querySelector("h2") || card; h.classList.add("draghandle");
-    h.setAttribute("draggable", "true");
-    h.addEventListener("dragstart", (e) => { dragged = card; card.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", card.id); } catch (x) {} });
-    h.addEventListener("dragend", () => { if (dragged) dragged.classList.remove("dragging"); dragged = null; [...home.children].forEach((c) => c.classList.remove("dropbefore")); saveOrder(); });
-    card.addEventListener("dragover", (e) => { if (!dragged || dragged === card) return; e.preventDefault(); [...home.children].forEach((c) => c.classList.remove("dropbefore")); card.classList.add("dropbefore"); });
-    card.addEventListener("drop", (e) => { if (!dragged || dragged === card) return; e.preventDefault(); const r = card.getBoundingClientRect(); const after = e.clientY > r.top + r.height / 2 && e.clientX > r.left; home.insertBefore(dragged, after ? card.nextSibling : card); card.classList.remove("dropbefore"); saveOrder(); });
+    let h = card.querySelector("h2");
+    if (!h) { h = document.createElement("div"); h.className = "grip"; h.title = "Drag to move this box"; h.textContent = "⠿"; card.prepend(h); }
+    h.classList.add("draghandle");
+    h.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.target.closest("button,input,select,a")) return;
+      const sx = e.clientX, sy = e.clientY; let moving = false, target = null, after = false;
+      try { h.setPointerCapture(e.pointerId); } catch (x) {}
+      const clear = () => [...home.children].forEach((c) => c.classList.remove("dropbefore", "dropafter"));
+      const move = (ev) => {
+        if (!moving) { if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 6) return; moving = true; card.classList.add("dragging"); }
+        ev.preventDefault();
+        card.style.pointerEvents = "none";
+        const under = document.elementFromPoint(ev.clientX, ev.clientY);
+        card.style.pointerEvents = "";
+        const c = under && under.closest("#home > section.card");
+        clear(); target = null;
+        if (c && c !== card) { const r = c.getBoundingClientRect(); after = ev.clientY > r.top + r.height / 2; target = c; c.classList.add(after ? "dropafter" : "dropbefore"); }
+      };
+      const up = () => {
+        h.removeEventListener("pointermove", move); h.removeEventListener("pointerup", up); h.removeEventListener("pointercancel", up);
+        if (moving && target) { home.insertBefore(card, after ? target.nextSibling : target); saveOrder(); }
+        card.classList.remove("dragging"); clear();
+      };
+      h.addEventListener("pointermove", move); h.addEventListener("pointerup", up); h.addEventListener("pointercancel", up);
+    });
   });
   applyOrder();
 }
@@ -392,4 +499,6 @@ function makeDraggable() {
   refresh(); setInterval(() => { if (!dragging || Date.now() - dragging > 2500) { dragging = 0; refresh(); } }, 1500);
   waxPoll(); setInterval(waxPoll, 3000);
   glvPoll(); setInterval(glvPoll, 3000);
+  gamesPoll(); setInterval(gamesPoll, 5000);
+  lightPoll(); setInterval(lightPoll, 5000);
 })();

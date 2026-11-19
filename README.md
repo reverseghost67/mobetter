@@ -66,6 +66,9 @@ Things learned the hard way (thanks to Shannon Parks at Parks Audio):
   Without the pause the Waxwing hits an internal timeout and drops the link after ~5 seconds. There is no keep-alive; once the
   stream is on, the connection stays up.
 - **Subscribe once and space commands about 500 ms apart.** Don't flood it.
+- **There is no save command, on purpose** (it protects the flash memory). The Waxwing checks its settings every 10 minutes and
+  writes them to flash only if something changed, so a change sticks within 10 minutes; a power cut sooner can lose it. The
+  "flash saves" byte (92) holds random data after power-up, not a real count; the reset button clears it.
 - The Waxwing takes **one Bluetooth connection at a time**: close its phone app while MoBetter is connected.
 - `tools/waxwing_probe.py` is a read-only check that finds the Waxwing and reads one status packet.
 

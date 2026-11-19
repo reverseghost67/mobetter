@@ -99,10 +99,14 @@ body.off .card:not(.vol){opacity:.55}
 /* Screens wide enough for 4 columns: the Waxwing box gets the 4th column, beside the Google TV remote (his layout, 14 Nov 2026). */
 @media (min-width:1360px){ #home{grid-template-columns:repeat(4,minmax(0,1fr))} #home .vol{grid-column:1 / -1} #waxcard{grid-column:4;grid-row:2 / span 4} }
 /* Drag a box by its title to move it (order remembered in this browser). */
-.draghandle{cursor:grab;user-select:none}
+.draghandle{cursor:grab;user-select:none;touch-action:none}
 .draghandle:active{cursor:grabbing}
 .card.dragging{opacity:.45}
-.card.dropbefore{outline:2px dashed var(--accent);outline-offset:3px}
+.card.dropbefore{box-shadow:-4px 0 0 0 var(--accent),0 -4px 0 0 var(--accent)}
+.card.dropafter{box-shadow:4px 0 0 0 var(--accent),0 4px 0 0 var(--accent)}
+.card{position:relative}
+.grip{position:absolute;top:2px;left:50%;transform:translateX(-50%);font-size:18px;line-height:1;color:var(--muted,#888);padding:4px 6px;border-radius:6px;opacity:.6}
+.grip:hover{opacity:1}
 
 .screenbar{display:flex;gap:8px;margin:0 0 10px}
 .screenwrap{margin:0 0 12px}

@@ -26,7 +26,10 @@ GTV = None  # Google TV remote (gtv.py), only when a Google TV address is config
 GTV_SCREEN = None  # Google TV screen view (gtv.GTVScreen), same address
 GLV = False  # GlitterVis visualizer on this PC (control port 127.0.0.1:8795), only when "glittervis": true in config.json
 GLV_CMD = re.compile(r"(start|stop|next|prev|lock|calm|title|fullscreen|window|size/(small|medium|large)|scene/[a-z]{1,12})")
+GAMES = False  # GlitterMame games menu on this PC (scheduled task "GlitterMame"), only when "games": true in config.json
+GAMES_PROCS = ("attractplus.exe", "mame.exe", "retroarch.exe")  # the only processes "Close" may end
 HDMI_WATCH = None  # hdmi_watch.HdmiWatch, only when "hdmi_watch" is set in config.json (Windows)
+LIFX = None  # LIFX bulbs on the LAN (lifx.py), only when "lifx" lists bulbs in config.json
 WAX = None  # Parks Audio Waxwing over Bluetooth LE (waxwing.py), only when "waxwing": true in config.json and bleak is installed
 
 
@@ -71,6 +74,16 @@ def identify_receiver():
         raise RuntimeError(f"{CFG['receiver']} did not answer like a Yamaha receiver (HTTP {st})")
     pick = lambda tag: (re.search(rf"<{tag}>([^<]*)</{tag}>", text) or [None, ""])[1]
     return pick("Model_Name"), pick("Version")
+
+
+def games_running():
+    """True when any GlitterMame program is running (Windows tasklist)."""
+    import subprocess
+    try:
+        out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=10).stdout.lower()
+    except Exception:
+        return False
+    return any(('"' + n + '"') in out for n in GAMES_PROCS)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -141,6 +154,15 @@ class Handler(BaseHTTPRequestHandler):
             import waxwing
             meta = [{"fn": f, "key": k, "label": l, "min": lo, "max": hi, "labels": lb} for f, (k, l, lo, hi, lb) in waxwing.SETTINGS.items()]
             return self.send(200, json.dumps({"configured": True, "settings": meta, **WAX.get_status()}).encode(), "application/json")
+        if p == "/api/lifx/status":
+            if LIFX is None:
+                return self.send(200, b'{"configured": false}', "application/json")
+            import lifx
+            return self.send(200, json.dumps({"configured": True, "kmin": lifx.K_MIN, "kmax": lifx.K_MAX, "bulbs": LIFX.status()}).encode(), "application/json")
+        if p == "/api/games/status":
+            if not GAMES:
+                return self.send(200, b'{"configured": false}', "application/json")
+            return self.send(200, json.dumps({"configured": True, "running": games_running()}).encode(), "application/json")
         if p == "/api/glittervis/status":
             if not GLV:
                 return self.send(200, b'{"configured": false}', "application/json")
@@ -269,6 +291,57 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(502, f"GlitterVis: {e}".encode()[:300])
         return self.send(200, b'{"ok":true}', "application/json")
 
+    def games_command(self):
+        # GlitterMame: "start" runs the GlitterMame scheduled task (opens the games menu on the TV's desktop session);
+        # "stop" ends only the three game programs in GAMES_PROCS. Each press is audited.
+        if not GAMES:
+            return self.send(404, b"Games not configured")
+        what = self.path[len("/api/games/"):]
+        if what not in ("start", "stop"):
+            return self.send(400, b"unknown command")
+        audit(f"{self.client_address[0]}  GAMES {what}")
+        import subprocess
+        try:
+            if what == "start":
+                r = subprocess.run(["schtasks", "/run", "/tn", "GlitterMame"], capture_output=True, text=True, timeout=15)
+                if r.returncode != 0:
+                    return self.send(502, ("could not start: " + (r.stderr or r.stdout)).encode()[:300])
+            else:
+                for name in GAMES_PROCS:
+                    subprocess.run(["taskkill", "/IM", name, "/F"], capture_output=True, text=True, timeout=15)
+        except Exception as e:
+            return self.send(502, f"Games: {e}".encode()[:300])
+        return self.send(200, b'{"ok":true}', "application/json")
+
+    def lifx_set(self):
+        # LIFX: only bulbs listed in config.json (by MAC); only power, brightness 1-100 and warmth. Each change is audited.
+        if LIFX is None:
+            return self.send(404, b"no LIFX bulbs configured")
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            req = json.loads(self.rfile.read(min(n, 2000)).decode("utf8") or "{}")
+            macs = req.get("macs") or []
+            if not isinstance(macs, list) or not macs or not all(isinstance(m, str) for m in macs):
+                raise ValueError
+            power = None if req.get("power") is None else bool(req["power"])
+            bright = None if req.get("brightness") is None else int(req["brightness"])
+            kelvin = None if req.get("kelvin") is None else int(req["kelvin"])
+        except (ValueError, TypeError, AttributeError):
+            return self.send(400, b"bad request")
+        if power is None and bright is None and kelvin is None:
+            return self.send(400, b"nothing to change")
+        bad = []
+        for m in macs:
+            try:
+                if not LIFX.set(m.lower(), power, bright, kelvin):
+                    bad.append(m)
+            except ValueError:
+                return self.send(400, b"unknown bulb")
+        audit(f"{self.client_address[0]}  LIFX {','.join(m[-5:] for m in macs)} power={power} bright={bright} kelvin={kelvin}" + (f" NO ANSWER {bad}" if bad else ""))
+        if bad:
+            return self.send(502, ("no answer from " + ", ".join(bad)).encode())
+        return self.send(200, b'{"ok":true}', "application/json")
+
     def do_POST(self):
         # Read the whole request body first (up to 20 kB), even when the request is about to be refused: answering before the
         # body is read makes Windows abort the connection. Handlers below read it from this buffer as before.
@@ -277,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
         self.rfile = io.BytesIO(self.rfile.read(min(n, 20000)) if n > 0 else b"")
         if not self.allowed():
             return self.send(403, b"private network only")
-        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set") and not self.path.startswith(("/api/gtv/", "/api/glittervis/")):
+        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set", "/api/lifx/set") and not self.path.startswith(("/api/gtv/", "/api/glittervis/", "/api/games/")):
             return self.send(404, b"not found")
         if self.headers.get("X-RX-UI") != "1":
             return self.send(403, b"missing page header")
@@ -285,10 +358,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.rename_input()
         if self.path == "/api/waxwing/set":
             return self.waxwing_set()
+        if self.path == "/api/lifx/set":
+            return self.lifx_set()
         if self.path.startswith("/api/gtv/"):
             return self.gtv_command()
         if self.path.startswith("/api/glittervis/"):
             return self.glittervis_command()
+        if self.path.startswith("/api/games/"):
+            return self.games_command()
         n = int(self.headers.get("Content-Length", 0))
         text = self.rfile.read(min(n, 20000)).decode("utf8", "replace")
         if 'cmd="PUT"' in text.replace("'", '"'):
@@ -361,6 +438,18 @@ def main(argv=None):
         HDMI_WATCH = hdmi_watch.HdmiWatch(CFG["hdmi_watch"], receiver_call, audit)
         HDMI_WATCH.start()
         print(f"HDMI audio watchdog: on (input {HDMI_WATCH.input})")
+    if CFG.get("lifx"):
+        global LIFX
+        import lifx
+        LIFX = lifx.Lifx(CFG["lifx"])
+        print(f"Lights panel: on ({len(LIFX.macs)} LIFX bulbs)")
+        if CFG.get("lifx_schedule"):
+            lifx.start_schedule(LIFX, CFG["lifx_schedule"], audit)
+            print("  timed changes: " + ", ".join(str(e.get("at")) for e in CFG["lifx_schedule"]))
+    if CFG.get("games"):
+        global GAMES
+        GAMES = True
+        print("Games panel: on")
     if CFG.get("glittervis"):
         global GLV
         GLV = True
