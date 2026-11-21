@@ -66,6 +66,21 @@ def receiver_call(method, path, data=None, timeout=8, ctype="text/xml"):
         return 502, f"receiver not reachable: {e}".encode(), "text/plain"
 
 
+def peer_links():
+    """Buttons to other MoBetter pages (one copy per receiver), from config.json "peers": [{"name": "Office", "port": 8781}].
+    Only a name and a port (same host) or a plain http(s) URL; anything else is dropped."""
+    out = []
+    for e in CFG.get("peers") or []:
+        if not isinstance(e, dict) or not str(e.get("name", "")).strip():
+            continue
+        name = str(e["name"]).strip()[:20]
+        if isinstance(e.get("port"), int) and 1 <= e["port"] <= 65535:
+            out.append({"name": name, "port": e["port"]})
+        elif isinstance(e.get("url"), str) and e["url"].startswith(("http://", "https://")):
+            out.append({"name": name, "url": e["url"]})
+    return out
+
+
 def identify_receiver():
     """Ask the receiver who it is (read-only). Returns (model, firmware) or raises."""
     st, body, _ = receiver_call("POST", "/YamahaRemoteControl/ctrl", b'<YAMAHA_AV cmd="GET"><System><Config>GetParam</Config></System></YAMAHA_AV>')
@@ -126,7 +141,7 @@ class Handler(BaseHTTPRequestHandler):
             st, body, ct = receiver_call("GET", "/YamahaExtendedControl/v1/" + p[len("/api/yxc/"):] + q)
             return self.send(st, body, ct)
         if p == "/api/config":
-            return self.send(200, json.dumps({k: CFG[k] for k in ("receiver", "model", "firmware")}).encode(), "application/json")
+            return self.send(200, json.dumps({**{k: CFG[k] for k in ("receiver", "model", "firmware")}, "peers": peer_links()}).encode(), "application/json")
         if p == "/api/scenes":
             # Your own one-tap scenes (the Listen card): scenes.json next to server.py, or the example file if you have none yet.
             for name in ("scenes.json", "scenes.example.json"):

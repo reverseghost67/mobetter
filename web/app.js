@@ -485,6 +485,19 @@ function makeDraggable() {
   applyOrder();
 }
 
+function buildPeers(peers) {
+  // Buttons to the other MoBetter pages (one copy per receiver). A "port" means the same host, so it works by IP or by name.
+  const nav = $("#peers"); nav.textContent = "";
+  for (const p of peers) {
+    const a = document.createElement("a");
+    a.className = "peer";
+    a.href = p.url || (location.protocol + "//" + location.hostname + ":" + p.port + "/");
+    a.textContent = p.name + " ↗";
+    a.title = "Open the " + p.name + " receiver";
+    nav.appendChild(a);
+  }
+}
+
 (async function init() {
   try { const c = Number(localStorage.getItem("ceil")); if (!isNaN(c) && localStorage.getItem("ceil") !== null) ceilTenths = c; } catch (e) {}
   wire();
@@ -493,6 +506,7 @@ function makeDraggable() {
     schema = await (await fetch("/api/schema")).json();
     const cfg = await (await fetch("/api/config")).json();
     if (cfg.model) { document.title = "MoBetter · " + cfg.model; $("#model").textContent = cfg.model; }
+    buildPeers(cfg.peers || []);
     await loadLists(); buildSetup(cfg); buildListen();
   } catch (e) { setOnline(false); }
   makeDraggable();

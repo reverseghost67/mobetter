@@ -9,6 +9,9 @@ body{padding:0 16px calc(24px + env(safe-area-inset-bottom));max-width:1500px;ma
 .bar{display:flex;align-items:center;gap:16px;padding:calc(14px + env(safe-area-inset-top)) 0 14px;position:sticky;top:0;background:linear-gradient(var(--bg) 80%,transparent);z-index:5}
 .brand{display:flex;align-items:baseline;gap:10px;flex:1;min-width:0}
 .brand h1{font-size:18px;font-weight:600;letter-spacing:.04em;margin:0}
+.peers{display:flex;gap:6px;flex-shrink:0}
+.peer{color:var(--muted);font-size:13px;text-decoration:none;border:1px solid currentColor;border-radius:999px;padding:5px 11px;white-space:nowrap;opacity:.85}
+.peer:hover,.peer:focus-visible{opacity:1;color:inherit}
 .sub{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);align-self:center;flex:none}
 .dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)}
