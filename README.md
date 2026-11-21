@@ -121,7 +121,7 @@ Each copy of MoBetter talks to one receiver. For a second receiver (another room
 2. Start it with the second receiver's address and its own port: `python server.py --receiver 192.168.0.60 --port 8781 --lan`. Keep using `--port 8781` every time you start that copy (the port is never saved).
 3. Add a `"peers"` list to **each** copy's `config.json` so the pages link to each other, for example in the first copy:
    `"peers": [{"name": "Office", "port": 8781}]` and in the second: `"peers": [{"name": "Main", "port": 8780}]`.
-   A small **Office ↗** / **Main ↗** button appears in the top bar. With `"port"` the link keeps whatever address you opened the page with (IP or computer name), so it works from phones too. A full address also works: `{"name": "Office", "url": "http://192.168.0.100:8781/"}`.
+   A small **Office ↗** / **Main ↗** button appears in the top bar. With `"port"` the link keeps whatever address you opened the page with (IP or computer name), so it works from phones too. A full address also works: `{"name": "Office", "url": "http://192.168.0.50:8781/"}`.
 4. Optional extras (Google TV, Waxwing, lights, HDMI watchdog) are per copy; leave them out of the second `config.json` unless that room has them.
 
 Tip: give each receiver a fixed address in your router, so a power cut never breaks the link.
