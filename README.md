@@ -4,7 +4,7 @@
 
 A modern, dark, minimal web page for controlling a Yamaha AV receiver from your phone, tablet or PC. It does everything the receiver's own Web Setup page does (every setting, in the same groups) and adds a clean Home screen.
 
-> **Status: early. Built and tested on one receiver (RX-A3070).** Other Yamaha models should work, because the page builds itself from your own receiver's list of settings, but that is not proven yet. If you try it, a *Compatibility report* (Issues tab) is the most useful thing you can send.
+> **Status: early. Built and tested on an RX-A3070; also running on a TSR-5830 (the RX-V583's twin), where the Home page and the settings list load and show live status.** Other Yamaha models should work, because the page builds itself from your own receiver's list of settings, but that is not proven yet. If you try it, a *Compatibility report* (Issues tab) is the most useful thing you can send.
 > **Not affiliated with Yamaha.** "Yamaha" is a trademark of its owner, used here only to say which products this works with. **Use at your own risk:** the Setup screens can change things like speaker settings, and even factory-reset a receiver. Anything risky asks you to confirm first.
 
 ![MoBetter Home screen, shown with a pretend receiver](docs/home-desktop.png)
@@ -113,6 +113,18 @@ This is the most useful thing you can do. Run (read-only, about a minute):
 python tools/diagnose.py
 ```
 It writes a short report (model, firmware, which features it found, how many settings could be read) to `data/diagnose-report.md`. It does not include your address, MAC, serial number, device name or Wi-Fi name. Read it, then paste it into a *Compatibility report* on the Issues tab.
+
+## More than one receiver
+Each copy of MoBetter talks to one receiver. For a second receiver (another room), run a second copy next to the first:
+
+1. Copy the MoBetter folder to a new folder (for example `MoBetter-Office`). Leave out `data/`, `config.json` and `scenes.json`; the new copy makes its own.
+2. Start it with the second receiver's address and its own port: `python server.py --receiver 192.168.0.60 --port 8781 --lan`. Keep using `--port 8781` every time you start that copy (the port is never saved).
+3. Add a `"peers"` list to **each** copy's `config.json` so the pages link to each other, for example in the first copy:
+   `"peers": [{"name": "Office", "port": 8781}]` and in the second: `"peers": [{"name": "Main", "port": 8780}]`.
+   A small **Office ↗** / **Main ↗** button appears in the top bar. With `"port"` the link keeps whatever address you opened the page with (IP or computer name), so it works from phones too. A full address also works: `{"name": "Office", "url": "http://192.168.0.100:8781/"}`.
+4. Optional extras (Google TV, Waxwing, lights, HDMI watchdog) are per copy; leave them out of the second `config.json` unless that room has them.
+
+Tip: give each receiver a fixed address in your router, so a power cut never breaks the link.
 
 ## Tests
 `python -m unittest discover -s tests` (uses a tiny fake receiver; no hardware needed).
