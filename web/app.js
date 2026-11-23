@@ -441,6 +441,83 @@ async function lightPoll() {
   lightRender();
 }
 
+/* ---------- AiDot / Linkind Wi-Fi bulbs (Basement + Lamp), through the server, all local ----------
+   One block per group from config.json: scene buttons, colors, brightness + warmth for the whole group, and each bulb's own on/off. */
+const AIDOT_SCENES = [
+  ["★ Warm 50%", { power: true, brightness: 50, kelvin: 2700 }],
+  ["Bright", { power: true, brightness: 100, kelvin: 4000 }],
+  ["Relax", { power: true, brightness: 35, kelvin: 2700 }],
+  ["Movie", { power: true, brightness: 10, kelvin: 2700 }],
+  ["All on", { power: true }],
+  ["All off", { power: false }],
+];
+const AIDOT_COLORS = [["Red", [255, 0, 0]], ["Orange", [255, 90, 0]], ["Purple", [140, 0, 255]], ["Blue", [0, 60, 255]], ["Teal", [0, 200, 160]], ["Green", [0, 255, 40]]];
+let aidotGroups = [], aidotBusy = 0, aidotK = [2700, 6500], aidotOpen = {};
+async function aidotSet(macs, change, label) {
+  if (READONLY) return toast("Preview only: nothing is sent");
+  if (!macs.length) return toast("No bulbs answering");
+  aidotBusy = Date.now();
+  try {
+    const r = await fetch("/api/aidot/set", { method: "POST", headers: { "Content-Type": "application/json", "X-RX-UI": "1" }, body: JSON.stringify({ macs, ...change }) });
+    if (!r.ok) throw new Error(await r.text());
+    const j = await r.json();
+    toast((label || "Done") + (j.failed && j.failed.length ? ` (${j.failed.length} not answering)` : ""));
+  } catch (e) { toast("Lights: " + e.message); }
+  aidotBusy = 0; setTimeout(aidotPoll, 900);
+}
+function aidotRender() {
+  if (Date.now() - aidotBusy < 1500) return;
+  const body = $("#aidotbody"); body.innerHTML = "";
+  let on = 0, total = 0;
+  aidotGroups.forEach((g, gi) => {
+    const live = g.bulbs.filter((b) => b.online), macs = live.map((b) => b.mac);
+    on += live.filter((b) => b.on).length; total += g.bulbs.length;
+    const box = document.createElement("div"); box.style.margin = gi ? "16px 0 4px" : "4px 0";
+    const h = document.createElement("div"); h.className = "muted"; h.style.cssText = "font-size:14px;margin-bottom:6px";
+    h.textContent = `${g.name}: ${live.filter((b) => b.on).length} of ${g.bulbs.length} on` + (live.length < g.bulbs.length ? ` (${g.bulbs.length - live.length} not answering)` : "");
+    box.append(h);
+    const sc = document.createElement("div"); sc.className = "chips small";
+    AIDOT_SCENES.forEach(([t, c]) => sc.append(chip(t, false, () => aidotSet(macs, c, `${g.name}: ${t.replace("★ ", "")}`))));
+    box.append(sc);
+    const co = document.createElement("div"); co.className = "chips small"; co.style.marginTop = "6px";
+    AIDOT_COLORS.forEach(([t, rgb]) => { const c = chip(t, false, () => aidotSet(macs, { power: true, rgb }, `${g.name}: ${t}`)); c.style.borderColor = `rgb(${rgb})`; co.append(c); });
+    const pick = document.createElement("input"); pick.type = "color"; pick.value = "#ff8800"; pick.title = "Any color"; pick.disabled = READONLY;
+    pick.style.cssText = "width:44px;height:34px;border:0;background:transparent;padding:0";
+    pick.onchange = () => { const v = pick.value; aidotSet(macs, { power: true, rgb: [1, 3, 5].map((i) => parseInt(v.substr(i, 2), 16)) }, `${g.name}: color ${v}`); };
+    co.append(pick); box.append(co);
+    const ref = live.find((b) => b.on) || live[0] || {};
+    [["Brightness", "brightness", 1, 100, 1, (v) => v + "%"], ["Warmth", "kelvin", aidotK[0], aidotK[1], 100, (v) => v + "K"]].forEach(([lab, key, mn, mx, st, fmt]) => {
+      const row = document.createElement("div"); row.className = "srow"; row.style.marginTop = "6px";
+      const lb = document.createElement("label"); lb.textContent = lab; const out = document.createElement("output");
+      const inp = document.createElement("input"); inp.type = "range"; inp.min = mn; inp.max = mx; inp.step = st; inp.disabled = READONLY || !macs.length;
+      inp.value = Math.max(mn, Math.min(mx, ref[key] || (key === "kelvin" ? 2700 : 50))); out.textContent = fmt(+inp.value);
+      inp.oninput = () => { aidotBusy = Date.now(); out.textContent = fmt(+inp.value); };
+      inp.onchange = () => aidotSet(macs, { [key]: +inp.value }, `${g.name}: ${fmt(+inp.value)}`);
+      row.append(lb, inp, out); box.append(row);
+    });
+    if (g.bulbs.length > 1) {
+      const det = document.createElement("details"); det.open = !!aidotOpen[g.name]; det.ontoggle = () => { aidotOpen[g.name] = det.open; }; const sum = document.createElement("summary"); sum.className = "muted"; sum.style.fontSize = "13px"; sum.textContent = "Each bulb";
+      const bl = document.createElement("div"); bl.className = "chips small"; bl.style.marginTop = "6px";
+      g.bulbs.forEach((b) => {
+        const nm = b.name.replace(/^Wi-Fi RGBW /, "");
+        if (!b.online) { const c = chip(nm + " ✕", false, () => toast(nm + " is not answering")); c.style.opacity = ".5"; bl.append(c); return; }
+        bl.append(chip(nm, b.on, () => aidotSet([b.mac], { power: !b.on }, `${nm} ${b.on ? "off" : "on"}`)));
+      });
+      det.append(sum, bl); box.append(det);
+    }
+    body.append(box);
+  });
+  $("#aidotstate").textContent = total ? `${on} of ${total} on` : "";
+}
+async function aidotPoll() {
+  if (document.hidden || Date.now() - aidotBusy < 1500) return;
+  let st; try { st = await (await fetch("/api/aidot/status")).json(); } catch (e) { return; }
+  if (!st.configured) return;
+  $("#aidotcard").classList.remove("hidden");
+  aidotGroups = st.groups || []; aidotK = [st.kmin || 2700, st.kmax || 6500];
+  aidotRender();
+}
+
 /* ---------- drag the boxes around (order saved in this browser) ---------- */
 function layoutKey() { return "cardOrder"; }
 function applyOrder() {
@@ -515,4 +592,5 @@ function buildPeers(peers) {
   glvPoll(); setInterval(glvPoll, 3000);
   gamesPoll(); setInterval(gamesPoll, 5000);
   lightPoll(); setInterval(lightPoll, 5000);
+  aidotPoll(); setInterval(aidotPoll, 5000);
 })();

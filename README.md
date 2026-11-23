@@ -19,6 +19,7 @@ A modern, dark, minimal web page for controlling a Yamaha AV receiver from your 
 - **Listen card (your own one-tap scenes):** buttons like "TV", "Records" or "Music · DAC" that turn the receiver on, pick the input and set Pure Direct or Straight in one tap. Copy `scenes.example.json` to `scenes.json` and edit it for your rack (see the example file for the fields).
 - **Parks Audio Waxwing phono preamp (optional):** a Waxwing card with output (analog / digital 24/48 / 24/96), gain with MM and MC presets, load, mode, EQ curve, Magic, DeRumble, tone, filters, balance, volume and a cue mute, plus live levels. See [Waxwing](#parks-audio-waxwing-optional) below.
 - **More than one receiver:** run one copy of MoBetter per receiver, each in its own folder with its own `--port`, and add `"peers": [{"name": "Office", "port": 8781}]` to each `config.json`. Every page then shows a small button that jumps to the others.
+- **AiDot / Linkind Wi-Fi bulbs (optional):** a lights card with scene buttons, colors, brightness and warmth per group, all local after a one-time sign-in that fetches each bulb's key (`pip install python-aidot`; config `"aidot": {"devices_file": ..., "groups": [...]}`, see `aidot_lights.py`).
 - **Arrange the boxes:** drag any box by its title to move it. The order is remembered in that browser. Wide screens get four columns.
 - **Setup:** every group of the receiver's own settings, with the right control for each (choices, number ranges, text), live values, and a filter box.
 - **Phone friendly,** installable to your home screen.

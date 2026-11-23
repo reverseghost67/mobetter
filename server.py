@@ -29,6 +29,7 @@ GLV_CMD = re.compile(r"(start|stop|next|prev|lock|calm|title|fullscreen|window|s
 GAMES = False  # GlitterMame games menu on this PC (scheduled task "GlitterMame"), only when "games": true in config.json
 GAMES_PROCS = ("attractplus.exe", "mame.exe", "retroarch.exe")  # the only processes "Close" may end
 HDMI_WATCH = None  # hdmi_watch.HdmiWatch, only when "hdmi_watch" is set in config.json (Windows)
+AIDOT = None  # AiDot/Linkind Wi-Fi bulbs (aidot_lights.py), only when "aidot" is set in config.json
 LIFX = None  # LIFX bulbs on the LAN (lifx.py), only when "lifx" lists bulbs in config.json
 WAX = None  # Parks Audio Waxwing over Bluetooth LE (waxwing.py), only when "waxwing": true in config.json and bleak is installed
 
@@ -169,6 +170,11 @@ class Handler(BaseHTTPRequestHandler):
             import waxwing
             meta = [{"fn": f, "key": k, "label": l, "min": lo, "max": hi, "labels": lb} for f, (k, l, lo, hi, lb) in waxwing.SETTINGS.items()]
             return self.send(200, json.dumps({"configured": True, "settings": meta, **WAX.get_status()}).encode(), "application/json")
+        if p == "/api/aidot/status":
+            if AIDOT is None:
+                return self.send(200, b'{"configured": false}', "application/json")
+            import aidot_lights
+            return self.send(200, json.dumps({"configured": True, "kmin": aidot_lights.K_MIN, "kmax": aidot_lights.K_MAX, "groups": AIDOT.status()}).encode(), "application/json")
         if p == "/api/lifx/status":
             if LIFX is None:
                 return self.send(200, b'{"configured": false}', "application/json")
@@ -328,6 +334,37 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(502, f"Games: {e}".encode()[:300])
         return self.send(200, b'{"ok":true}', "application/json")
 
+    def aidot_set(self):
+        # AiDot/Linkind: only bulbs listed in config.json groups; power, brightness 1-100, warmth or an RGB color. Each change is audited.
+        if AIDOT is None:
+            return self.send(404, b"no AiDot bulbs configured")
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            req = json.loads(self.rfile.read(min(n, 4000)).decode("utf8") or "{}")
+            macs = [str(m).lower() for m in (req.get("macs") or [])]
+            if not macs or len(macs) > 50:
+                raise ValueError
+            power = None if req.get("power") is None else bool(req["power"])
+            bright = None if req.get("brightness") is None else int(req["brightness"])
+            kelvin = None if req.get("kelvin") is None else int(req["kelvin"])
+            rgb = req.get("rgb")
+            if rgb is not None:
+                rgb = [int(x) for x in rgb]
+                if len(rgb) != 3:
+                    raise ValueError
+        except (ValueError, TypeError, AttributeError):
+            return self.send(400, b"bad request")
+        if power is None and bright is None and kelvin is None and rgb is None:
+            return self.send(400, b"nothing to change")
+        try:
+            bad = AIDOT.set(macs, power, bright, kelvin, rgb)
+        except ValueError:
+            return self.send(400, b"unknown bulb")
+        audit(f"{self.client_address[0]}  AIDOT {len(macs)} bulb(s) power={power} bright={bright} kelvin={kelvin} rgb={rgb}" + (f" NO ANSWER {[m[-5:] for m in bad]}" if bad else ""))
+        if bad and len(bad) == len(macs):
+            return self.send(502, b"no answer from the bulbs")
+        return self.send(200, json.dumps({"ok": True, "failed": bad}).encode(), "application/json")
+
     def lifx_set(self):
         # LIFX: only bulbs listed in config.json (by MAC); only power, brightness 1-100 and warmth. Each change is audited.
         if LIFX is None:
@@ -365,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
         self.rfile = io.BytesIO(self.rfile.read(min(n, 20000)) if n > 0 else b"")
         if not self.allowed():
             return self.send(403, b"private network only")
-        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set", "/api/lifx/set") and not self.path.startswith(("/api/gtv/", "/api/glittervis/", "/api/games/")):
+        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set", "/api/lifx/set", "/api/aidot/set") and not self.path.startswith(("/api/gtv/", "/api/glittervis/", "/api/games/")):
             return self.send(404, b"not found")
         if self.headers.get("X-RX-UI") != "1":
             return self.send(403, b"missing page header")
@@ -373,6 +410,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.rename_input()
         if self.path == "/api/waxwing/set":
             return self.waxwing_set()
+        if self.path == "/api/aidot/set":
+            return self.aidot_set()
         if self.path == "/api/lifx/set":
             return self.lifx_set()
         if self.path.startswith("/api/gtv/"):
@@ -453,6 +492,16 @@ def main(argv=None):
         HDMI_WATCH = hdmi_watch.HdmiWatch(CFG["hdmi_watch"], receiver_call, audit)
         HDMI_WATCH.start()
         print(f"HDMI audio watchdog: on (input {HDMI_WATCH.input})")
+    if CFG.get("aidot"):
+        global AIDOT
+        try:
+            import aidot_lights
+            AIDOT = aidot_lights.Aidot(CFG["aidot"], ROOT)
+            print(f"AiDot lights panel: on ({len(AIDOT.macs)} bulbs in {len(AIDOT.groups)} group(s))")
+        except ImportError:
+            print("AiDot lights panel: off (library missing: pip install python-aidot)")
+        except Exception as e:
+            print(f"AiDot lights panel: off ({type(e).__name__}: {e})")
     if CFG.get("lifx"):
         global LIFX
         import lifx
