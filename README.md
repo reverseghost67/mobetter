@@ -127,6 +127,17 @@ Each copy of MoBetter talks to one receiver. For a second receiver (another room
 
 Tip: give each receiver a fixed address in your router, so a power cut never breaks the link.
 
+## Optional: AiDot / Linkind Wi-Fi bulbs
+A lights card for AiDot bulbs (sold as Linkind; made by Leedarson): scene buttons (Warm 50%, Bright, Relax, Movie, All on/off), color chips and an any-color picker, brightness and warmth for each group, and each bulb's own on/off. Control is local (TCP on your home network) once each bulb's key is known.
+
+1. Add the bulbs in the AiDot app on your **2.4 GHz** Wi-Fi.
+2. `pip install python-aidot`, then run `python tools/aidot_login.py` once. You type your AiDot email and password (hidden); it saves only each bulb's key to `data/aidot-devices.json`. Your password is not saved.
+3. Add groups to `config.json` by MAC (the login script and the app show them):
+   `"aidot": {"devices_file": "data/aidot-devices.json", "groups": [{"name": "Basement", "macs": ["1c:d6:bd:..", ".."]}]}`
+4. Restart MoBetter. The card appears and finds the bulbs by broadcast.
+
+Re-pairing or renaming a bulb in the app gives it a new key or name: run the login script again and restart. The app's animated effects and music mode go through AiDot's cloud, so they stay in the app.
+
 ## Tests
 `python -m unittest discover -s tests` (uses a tiny fake receiver; no hardware needed).
 
