@@ -441,6 +441,47 @@ async function lightPoll() {
   lightRender();
 }
 
+/* ---------- Kasa smart plugs (e.g. the office heater), through the server, all local ----------
+   On/off per plug; a plug with an auto-off timer shows the minutes left. The server does the auto-off. */
+let kasaPlugs = [], kasaBusy = 0;
+async function kasaSet(p, power) {
+  if (READONLY) return toast("Preview only: nothing is sent");
+  kasaBusy = Date.now();
+  try {
+    const r = await fetch("/api/kasa/set", { method: "POST", headers: { "Content-Type": "application/json", "X-RX-UI": "1" }, body: JSON.stringify({ id: p.id, power }) });
+    if (!r.ok) throw new Error(await r.text());
+    toast(`${p.name} ${power ? "on" : "off"}`);
+  } catch (e) { toast("Plug: " + e.message); }
+  kasaBusy = 0; setTimeout(kasaPoll, 700);
+}
+function kasaRender() {
+  const body = $("#kasabody"); body.innerHTML = "";
+  kasaPlugs.forEach((p) => {
+    const row = document.createElement("div"); row.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0";
+    const name = document.createElement("div"); name.textContent = p.name; name.style.minWidth = "9em";
+    row.append(name);
+    if (!p.online) { const m = document.createElement("span"); m.className = "muted"; m.textContent = "not answering"; row.append(m); body.append(row); return; }
+    row.append(chip("On", p.on, () => kasaSet(p, true)), chip("Off", !p.on, () => kasaSet(p, false)));
+    if (p.auto_off_minutes) {
+      const m = document.createElement("span"); m.className = "muted"; m.style.fontSize = "13px";
+      const h = (x) => x >= 60 ? `${Math.floor(x / 60)} h ${x % 60} min` : `${x} min`;
+      m.textContent = p.on && p.minutes_left != null ? `auto-off in ${h(p.minutes_left)}` : `auto-off after ${h(p.auto_off_minutes)}`;
+      row.append(m);
+    }
+    body.append(row);
+  });
+  const on = kasaPlugs.filter((p) => p.on).length;
+  $("#kasastate").textContent = kasaPlugs.length ? `${on} of ${kasaPlugs.length} on` : "";
+}
+async function kasaPoll() {
+  if (document.hidden || Date.now() - kasaBusy < 1500) return;
+  let st; try { st = await (await fetch("/api/kasa/status")).json(); } catch (e) { return; }
+  if (!st.configured) return;
+  $("#kasacard").classList.remove("hidden");
+  kasaPlugs = st.plugs || [];
+  kasaRender();
+}
+
 /* ---------- AiDot / Linkind Wi-Fi bulbs (Basement + Lamp), through the server, all local ----------
    One block per group from config.json: scene buttons, colors, brightness + warmth for the whole group, and each bulb's own on/off. */
 const AIDOT_SCENES = [
@@ -593,4 +634,5 @@ function buildPeers(peers) {
   gamesPoll(); setInterval(gamesPoll, 5000);
   lightPoll(); setInterval(lightPoll, 5000);
   aidotPoll(); setInterval(aidotPoll, 5000);
+  kasaPoll(); setInterval(kasaPoll, 5000);
 })();

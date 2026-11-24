@@ -161,3 +161,16 @@ it backs off after 3 tries in 10 minutes. `GET /api/hdmiwatch` shows what it see
 
 **Tip (Yamaha):** set the PC's input to *Audio Select: HDMI* rather than *Auto*. With Auto, a dropped HDMI link (a reboot, or a
 display mode change) can leave the receiver listening to that input's empty analog jack.
+
+## Kasa smart plugs (optional)
+
+TP-Link Kasa plugs (for example the HS103) are switched on the home network with [python-kasa](https://github.com/python-kasa/python-kasa) (`pip install python-kasa`). Older plugs need no account. Add them to `config.json`:
+
+```json
+"kasa": {"plugs": [{"name": "Office heater", "host": "192.168.0.50", "mac": "AA:BB:CC:DD:EE:FF", "auto_off_minutes": 180}]}
+```
+
+- Only listed plugs are touched; on/off only.
+- `mac` (optional) lets MoBetter find the plug again if its address changes.
+- `auto_off_minutes` (optional) is a safety timer for heaters and similar: the plug is turned off once it has been on that long, however it was switched on. MoBetter never turns a plug on by itself.
+- Find plugs and their addresses with `kasa discover` (comes with python-kasa).

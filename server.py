@@ -30,6 +30,7 @@ GAMES = False  # GlitterMame games menu on this PC (scheduled task "GlitterMame"
 GAMES_PROCS = ("attractplus.exe", "mame.exe", "retroarch.exe")  # the only processes "Close" may end
 HDMI_WATCH = None  # hdmi_watch.HdmiWatch, only when "hdmi_watch" is set in config.json (Windows)
 AIDOT = None  # AiDot/Linkind Wi-Fi bulbs (aidot_lights.py), only when "aidot" is set in config.json
+KASA = None  # TP-Link Kasa smart plugs (kasa_plugs.py), only when "kasa" is set in config.json
 LIFX = None  # LIFX bulbs on the LAN (lifx.py), only when "lifx" lists bulbs in config.json
 WAX = None  # Parks Audio Waxwing over Bluetooth LE (waxwing.py), only when "waxwing": true in config.json and bleak is installed
 
@@ -175,6 +176,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, b'{"configured": false}', "application/json")
             import aidot_lights
             return self.send(200, json.dumps({"configured": True, "kmin": aidot_lights.K_MIN, "kmax": aidot_lights.K_MAX, "groups": AIDOT.status()}).encode(), "application/json")
+        if p == "/api/kasa/status":
+            if KASA is None:
+                return self.send(200, b'{"configured": false}', "application/json")
+            return self.send(200, json.dumps({"configured": True, "plugs": KASA.status()}).encode(), "application/json")
         if p == "/api/lifx/status":
             if LIFX is None:
                 return self.send(200, b'{"configured": false}', "application/json")
@@ -365,6 +370,27 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(502, b"no answer from the bulbs")
         return self.send(200, json.dumps({"ok": True, "failed": bad}).encode(), "application/json")
 
+    def kasa_set(self):
+        # Kasa plugs: only plugs listed in config.json; on/off only. Each change is audited.
+        if KASA is None:
+            return self.send(404, b"no Kasa plugs configured")
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            req = json.loads(self.rfile.read(min(n, 1000)).decode("utf8") or "{}")
+            plug, power = str(req["id"]), req["power"]
+            if not isinstance(power, bool):
+                raise ValueError
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return self.send(400, b"bad request")
+        try:
+            ok = KASA.set(plug, power)
+        except ValueError:
+            return self.send(400, b"unknown plug")
+        audit(f"{self.client_address[0]}  KASA plug {plug} power={power}" + ("" if ok else " NO ANSWER"))
+        if not ok:
+            return self.send(502, b"no answer from the plug")
+        return self.send(200, b'{"ok":true}', "application/json")
+
     def lifx_set(self):
         # LIFX: only bulbs listed in config.json (by MAC); only power, brightness 1-100 and warmth. Each change is audited.
         if LIFX is None:
@@ -402,7 +428,7 @@ class Handler(BaseHTTPRequestHandler):
         self.rfile = io.BytesIO(self.rfile.read(min(n, 20000)) if n > 0 else b"")
         if not self.allowed():
             return self.send(403, b"private network only")
-        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set", "/api/lifx/set", "/api/aidot/set") and not self.path.startswith(("/api/gtv/", "/api/glittervis/", "/api/games/")):
+        if self.path not in ("/api/xml", "/api/rename", "/api/waxwing/set", "/api/lifx/set", "/api/aidot/set", "/api/kasa/set") and not self.path.startswith(("/api/gtv/", "/api/glittervis/", "/api/games/")):
             return self.send(404, b"not found")
         if self.headers.get("X-RX-UI") != "1":
             return self.send(403, b"missing page header")
@@ -412,6 +438,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.waxwing_set()
         if self.path == "/api/aidot/set":
             return self.aidot_set()
+        if self.path == "/api/kasa/set":
+            return self.kasa_set()
         if self.path == "/api/lifx/set":
             return self.lifx_set()
         if self.path.startswith("/api/gtv/"):
@@ -502,6 +530,14 @@ def main(argv=None):
             print("AiDot lights panel: off (library missing: pip install python-aidot)")
         except Exception as e:
             print(f"AiDot lights panel: off ({type(e).__name__}: {e})")
+    if CFG.get("kasa"):
+        global KASA
+        try:
+            import kasa_plugs
+            KASA = kasa_plugs.Kasa(CFG["kasa"], audit)
+            print(f"Plugs panel: on ({len(KASA.plugs)} Kasa plug(s))")
+        except ImportError:
+            print("Plugs panel: off (library missing: pip install python-kasa)")
     if CFG.get("lifx"):
         global LIFX
         import lifx
