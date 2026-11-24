@@ -581,10 +581,46 @@ def start_self_check(port, every=60, misses=3):
         return
     import threading, time
 
+    def private_mb():
+        """This process's committed memory in MB (Windows); None elsewhere."""
+        if sys.platform != "win32":
+            return None
+        import ctypes
+        from ctypes import wintypes
+
+        class PMC(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] +                        [(n, ctypes.c_size_t) for n in ("PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+                        "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage", "PagefileUsage",
+                        "PeakPagefileUsage", "PrivateUsage")]
+        c = PMC(); c.cb = ctypes.sizeof(PMC)
+        try:
+            k = ctypes.windll.kernel32
+            k.GetCurrentProcess.restype = wintypes.HANDLE
+            f = ctypes.windll.psapi.GetProcessMemoryInfo
+            f.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD]
+            if f(k.GetCurrentProcess(), ctypes.byref(c), c.cb):
+                return c.PrivateUsage // (1024 * 1024)
+        except Exception:  # noqa: BLE001  (never let the memory reading stop the health check)
+            pass
+        return None
+
+    limit = int(os.environ.get("MOBETTER_MEMORY_LIMIT_MB", "1500"))
+
     def loop():
         bad = 0
+        tick = 0
         time.sleep(every)
         while True:
+            mb = private_mb()
+            if mb is not None:
+                if tick % 10 == 0:  # every ~10 minutes, so a slow leak shows up in server.log
+                    print(f"{datetime.datetime.now():%Y-%m-%d %H:%M} memory: {mb} MB", flush=True)
+                if mb > limit:
+                    # 23 Nov 2026: a MoBetter process grew to ~61 GB and starved the whole PC. Never again.
+                    print(f"self-check: memory {mb} MB is over the {limit} MB limit, exiting so the supervisor restarts MoBetter", flush=True)
+                    audit(f"self-check  memory {mb} MB over limit, restarting")
+                    os._exit(4)
+            tick += 1
             try:
                 with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/config", timeout=15) as r:
                     bad = 0 if r.status == 200 else bad + 1

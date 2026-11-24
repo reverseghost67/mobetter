@@ -7,6 +7,9 @@
 - `server.py` self-check: every minute it asks its own page for `/api/config`; 3 misses in a row = frozen, so it exits
   (code 3) and the supervisor starts a fresh copy. Off with `MOBETTER_NO_SELFCHECK=1`. Output is now line-buffered and
   crashed background threads are logged.
+- Memory guard: the self-check logs MoBetter's memory every ~10 minutes and exits (code 4) if it passes 1,500 MB
+  (`MOBETTER_MEMORY_LIMIT_MB`), so a leak can never starve the PC again. Found in MINI's event log: on 23 Nov a
+  MoBetter process grew to ~61 GB (Windows 'low virtual memory' warnings from 11:04 PM), other apps crashed, then it died.
 - Why: on 23 Nov the office instance stopped overnight and stayed down ~10 hours; Windows' "restart on failure" only
   covers a failed START, not a program that dies later.
 
