@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-24: Stays up by itself
+- New `supervisor.py`: runs `server.py` (same arguments), restarts it 5 seconds after any exit, and writes `data/crash.log`
+  (time, exit code, how long it ran, its last output) plus `data/server.log` (all output, rotated at 5 MB). Backs off to
+  60 s if it dies 5 times in 2 minutes; one supervisor per folder (lock file).
+- `server.py` self-check: every minute it asks its own page for `/api/config`; 3 misses in a row = frozen, so it exits
+  (code 3) and the supervisor starts a fresh copy. Off with `MOBETTER_NO_SELFCHECK=1`. Output is now line-buffered and
+  crashed background threads are logged.
+- Why: on 23 Nov the office instance stopped overnight and stayed down ~10 hours; Windows' "restart on failure" only
+  covers a failed START, not a program that dies later.
+
 ## 2026-11-23: Kasa smart plugs
 - New optional "Plugs" card for TP-Link Kasa smart plugs (python-kasa, all local, no account needed for older plugs such as the HS103): on/off per plug, "x of y on".
 - Optional per-plug safety timer `auto_off_minutes` (meant for heaters): MoBetter turns the plug off after it has been on that long, however it was switched on; the card shows the minutes left. Nothing ever switches a plug on by itself.

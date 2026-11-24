@@ -460,6 +460,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main(argv=None):
+    # Under the supervisor, output goes to data\server.log: write each line straight away, so a crash log has the last words.
+    for st in (sys.stdout, sys.stderr):
+        try:
+            st.reconfigure(line_buffering=True)
+        except (AttributeError, ValueError):
+            pass
+    import threading, traceback
+    threading.excepthook = lambda a: print("thread crashed: " + "".join(traceback.format_exception(a.exc_type, a.exc_value, a.exc_traceback)), flush=True)
     ap = argparse.ArgumentParser(description="MoBetter: a modern web front end for Yamaha AV receivers")
     ap.add_argument("--receiver", help="IP address of your receiver (remembered in config.json)")
     ap.add_argument("--port", type=int, help="port to serve on (default 8780)")
@@ -562,7 +570,32 @@ def main(argv=None):
                  f"(or close the other MoBetter window and start again).")
     where = "localhost" if host == "127.0.0.1" else "this-PC's-address"
     print(f"MoBetter is running: http://{where}:{port}   (Ctrl+C to stop)")
+    start_self_check(port)
     srv.serve_forever()
+
+
+def start_self_check(port, every=60, misses=3):
+    """Every minute, ask our own page for /api/config. If it fails 3 times in a row, MoBetter is running but
+    frozen: exit on purpose (code 3) so supervisor.py starts a fresh copy. Off with MOBETTER_NO_SELFCHECK=1."""
+    if os.environ.get("MOBETTER_NO_SELFCHECK") == "1":
+        return
+    import threading, time
+
+    def loop():
+        bad = 0
+        time.sleep(every)
+        while True:
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/config", timeout=15) as r:
+                    bad = 0 if r.status == 200 else bad + 1
+            except Exception as e:  # noqa: BLE001
+                bad += 1
+                print(f"self-check: no answer from our own page ({type(e).__name__}), {bad} of {misses}", flush=True)
+            if bad >= misses:
+                print(f"self-check: page frozen for {misses} minutes, exiting so the supervisor restarts MoBetter", flush=True)
+                os._exit(3)
+            time.sleep(every)
+    threading.Thread(target=loop, daemon=True, name="self-check").start()
 
 
 if __name__ == "__main__":

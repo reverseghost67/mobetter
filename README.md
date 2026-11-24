@@ -174,3 +174,10 @@ TP-Link Kasa plugs (for example the HS103) are switched on the home network with
 - `mac` (optional) lets MoBetter find the plug again if its address changes.
 - `auto_off_minutes` (optional) is a safety timer for heaters and similar: the plug is turned off once it has been on that long, however it was switched on. MoBetter never turns a plug on by itself.
 - Find plugs and their addresses with `kasa discover` (comes with python-kasa).
+
+## Keeping it running (supervisor)
+
+Run MoBetter through `supervisor.py` with the same arguments, for example `pythonw supervisor.py --lan`. It restarts
+MoBetter if it ever stops and logs why in `data/crash.log`. MoBetter also checks its own page every minute and restarts
+itself (through the supervisor) if it has frozen. On Windows, point the scheduled task at `supervisor.py` and add a
+repeating trigger (every 5 minutes, "do not start a new instance") as a backstop in case the supervisor itself stops.
